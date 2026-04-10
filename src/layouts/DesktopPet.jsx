@@ -6,13 +6,21 @@ import { useStore } from '../store.js'
 
 const MASCOT_SIZE = 100
 const WALK_SPEED = 40   // px/s
-const IDLE_AFTER = 20   // seconds of no notifications before sleep
+const IDLE_AFTER = 20   // seconds of no notifications AND no user interaction before sleep
 
 function rand(a, b) { return a + Math.random() * (b - a) }
 
+// Maps internal locomotion state to visual mascot state.
+// 'walk' is now its own visual state so CSS can give it a distinct hop animation
+// without needing !important overrides.
 const VISUAL_STATE = {
-  idle: 'idle', walk: 'idle', alert: 'alert',
-  wave: 'wave', sleep: 'sleep', happy: 'happy', thinking: 'thinking',
+  idle:     'idle',
+  walk:     'walk',
+  alert:    'alert',
+  wave:     'wave',
+  sleep:    'sleep',
+  happy:    'happy',
+  thinking: 'thinking',
 }
 
 export function DesktopPet() {
@@ -20,8 +28,15 @@ export function DesktopPet() {
 
   const [posX, setPosX] = useState(window.innerWidth / 2)
   const [facing, setFacing] = useState(1) // 1 = right, -1 = left
-  const [isWalking, setIsWalking] = useState(false)
   const [activeBubble, setActiveBubble] = useState(null) // notification object or null
+  // Reactive window width — updated on resize so speech bubble position stays correct
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth)
+
+  useEffect(() => {
+    function onResize() { setWindowWidth(window.innerWidth) }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const stateRef = useRef('idle')
   const posXRef = useRef(posX)
@@ -40,20 +55,21 @@ export function DesktopPet() {
     stateTimerRef.current = 0
     stateDurationRef.current = duration ?? rand(3, 6)
     setMascotState(VISUAL_STATE[s] ?? 'idle')
-    setIsWalking(s === 'walk')
 
     if (s === 'alert' || s === 'wave') {
       idleAccumRef.current = 0
     }
   }, [setMascotState])
 
-  // Enqueue incoming notifications
+  // Enqueue ALL unseen notifications, not just notifications[0].
+  // Scanning the full array ensures two notifications arriving in the same
+  // React render batch are both enqueued.
   useEffect(() => {
-    if (notifications.length === 0) return
-    const latest = notifications[0]
-    // Only enqueue if not already in queue
-    if (!notificationQueueRef.current.find((n) => n.id === latest.id)) {
-      notificationQueueRef.current.push(latest)
+    const queued = new Set(notificationQueueRef.current.map((n) => n.id))
+    for (const n of notifications) {
+      if (!queued.has(n.id)) {
+        notificationQueueRef.current.push(n)
+      }
     }
   }, [notifications])
 
@@ -136,9 +152,10 @@ export function DesktopPet() {
     return () => cancelAnimationFrame(rafRef.current)
   }, [setState])
 
-  // Click mascot → wave + idle quip
+  // Click mascot → wave + reset idle accumulator so she doesn't immediately sleep
   function handleMascotClick() {
     if (stateRef.current === 'alert' || stateRef.current === 'wave') return
+    idleAccumRef.current = 0
     setState('wave', 2)
   }
 
@@ -147,7 +164,11 @@ export function DesktopPet() {
   function handleMouseLeave() { window.buddy?.setMouseOverMascot(false) }
 
   function handleDismissBubble() {
-    if (activeBubble) clearNotification(activeBubble.id)
+    if (activeBubble) {
+      clearNotification(activeBubble.id)
+      // Tell main to clean up the reply handler for this notification
+      window.buddy?.dismissNotification(activeBubble.id)
+    }
     setActiveBubble(null)
   }
 
@@ -161,24 +182,26 @@ export function DesktopPet() {
 
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden">
-      {/* Speech bubble — positioned above mascot */}
-      {activeBubble && (
-        <div
-          className="absolute pointer-events-auto"
-          style={{
-            bottom: bubbleBottom,
-            left: Math.max(8, Math.min(window.innerWidth - 296, posX - 144)),
-          }}
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-        >
-          <SpeechBubble
-            notification={activeBubble}
-            onDismiss={handleDismissBubble}
-            onReply={handleReply}
-          />
-        </div>
-      )}
+      {/* Speech bubble — aria-live so screen readers announce incoming notifications */}
+      <div aria-live="polite" aria-atomic="true">
+        {activeBubble && (
+          <div
+            className="absolute pointer-events-auto"
+            style={{
+              bottom: bubbleBottom,
+              left: Math.max(8, Math.min(windowWidth - 296, posX - 144)),
+            }}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+          >
+            <SpeechBubble
+              notification={activeBubble}
+              onDismiss={handleDismissBubble}
+              onReply={handleReply}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Mascot */}
       <div
@@ -193,7 +216,7 @@ export function DesktopPet() {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <MascotRenderer state={mascotState} size={MASCOT_SIZE} walking={isWalking} />
+        <MascotRenderer state={mascotState} size={MASCOT_SIZE} />
       </div>
     </div>
   )

@@ -46,6 +46,12 @@ vi.mock('@slack/web-api', () => ({
     chat: {
       postMessage: vi.fn().mockResolvedValue({ ok: true }),
     },
+    users: {
+      // Return the raw userId as the display name so tests remain deterministic
+      info: vi.fn().mockImplementation(({ user }) =>
+        Promise.resolve({ user: { profile: { display_name: user }, real_name: user } })
+      ),
+    },
   })),
 }))
 

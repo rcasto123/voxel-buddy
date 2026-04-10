@@ -1,7 +1,9 @@
 // src/store.js
 import { create } from 'zustand'
 
-const VALID_STATES = new Set(['idle', 'alert', 'wave', 'sleep', 'thinking', 'happy'])
+// 'walk' is now a valid visual state — maps to .airie--walk CSS class with its
+// own hop animation, avoiding the need for !important overrides.
+const VALID_STATES = new Set(['idle', 'walk', 'alert', 'wave', 'sleep', 'thinking', 'happy'])
 const MAX_NOTIFICATIONS = 50
 
 export const useStore = create((set, get) => ({
@@ -36,5 +38,7 @@ export const useStore = create((set, get) => ({
       settings: { ...state.settings, ...partial },
     })),
 
+  // Derived count — call as getState().unreadCount() or useStore(s => s.notifications.length)
+  // in components for reactive subscriptions.
   unreadCount: () => get().notifications.length,
 }))

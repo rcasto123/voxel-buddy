@@ -17,6 +17,25 @@ function createSlackAdapter({ appToken, botToken }) {
   // Map<notificationId, replyFn> — synced to main process replyHandlers
   const replyHandlers = new Map()
 
+  // Cache of userId → display name to avoid repeated users.info calls
+  const _userCache = new Map()
+
+  async function resolveDisplayName(userId) {
+    if (!userId) return 'unknown'
+    if (_userCache.has(userId)) return _userCache.get(userId)
+    try {
+      const res = await webClient.users.info({ user: userId })
+      // Prefer display_name (custom name), fall back to real_name, then raw userId
+      const name = res.user?.profile?.display_name || res.user?.real_name || userId
+      _userCache.set(userId, name)
+      return name
+    } catch (e) {
+      console.warn('[Slack] users.info failed for', userId, '—', e.message)
+      // Degrade gracefully: show the raw ID rather than crashing
+      return userId
+    }
+  }
+
   return {
     name: 'slack',
     replyHandlers,
@@ -35,11 +54,12 @@ function createSlackAdapter({ appToken, botToken }) {
         if (!event || event.channel_type !== 'im') return
 
         const id = uuidv4()
+        const displayName = await resolveDisplayName(event.user)
         const notification = {
           id,
           source: 'slack',
           type: 'dm',
-          sender: { name: event.user || 'unknown', avatar: null },
+          sender: { name: displayName, avatar: null },
           text: (event.text || '').substring(0, 200),
           timestamp: Date.now(),
         }
@@ -56,11 +76,12 @@ function createSlackAdapter({ appToken, botToken }) {
         if (!event) return
 
         const id = uuidv4()
+        const displayName = await resolveDisplayName(event.user)
         const notification = {
           id,
           source: 'slack',
           type: 'mention',
-          sender: { name: event.user || 'unknown', avatar: null },
+          sender: { name: displayName, avatar: null },
           text: (event.text || '').substring(0, 200),
           timestamp: Date.now(),
         }
@@ -83,6 +104,7 @@ function createSlackAdapter({ appToken, botToken }) {
 
     async stop() {
       replyHandlers.clear()
+      _userCache.clear()
       if (client) {
         try {
           await client.disconnect()

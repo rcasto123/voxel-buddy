@@ -9,22 +9,29 @@ const isDev = process.env.NODE_ENV === 'development'
 const SETTINGS_PATH = path.join(os.homedir(), '.voxelbuddy', 'settings.json')
 
 // ── Settings helpers ────────────────────────────────────────────
+// Cached after first load — avoids repeated disk reads and TOCTOU issues.
+let _cachedSettings = null
+
 function loadSettings() {
+  if (_cachedSettings) return _cachedSettings
   try {
     fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true })
     if (fs.existsSync(SETTINGS_PATH)) {
-      return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'))
+      _cachedSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'))
+      return _cachedSettings
     }
   } catch (e) {
     console.warn('[Settings] Failed to load:', e.message)
   }
-  return { layout: 'desktop-pet', mascotName: 'Buddy' }
+  _cachedSettings = { layout: 'desktop-pet', mascotName: 'Buddy' }
+  return _cachedSettings
 }
 
 function saveSettings(settings) {
   try {
     fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true })
     fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2))
+    _cachedSettings = settings // keep cache in sync
   } catch (e) {
     console.warn('[Settings] Failed to save:', e.message)
   }
@@ -32,6 +39,7 @@ function saveSettings(settings) {
 
 // ── Reply handler map ───────────────────────────────────────────
 // Populated by integration adapters. Key = notificationId, Value = async fn(text)
+// Entries are deleted after the reply is sent or the notification is dismissed.
 const replyHandlers = new Map()
 
 // ── Window ─────────────────────────────────────────────────────
@@ -83,7 +91,7 @@ function registerIPC() {
     }
   })
 
-  // Send reply via the correct integration
+  // Send reply via the correct integration, then clean up the handler
   ipcMain.handle('buddy:send-reply', async (_event, { notificationId, text }) => {
     const fn = replyHandlers.get(notificationId)
     if (!fn) {
@@ -95,10 +103,18 @@ function registerIPC() {
       console.log('[IPC] Reply sent for', notificationId)
     } catch (e) {
       console.error('[IPC] Reply failed:', e.message)
+    } finally {
+      // Always clean up — prevents the Map from growing unbounded
+      replyHandlers.delete(notificationId)
     }
   })
 
-  // Settings
+  // Notification dismissed without replying — clean up the handler
+  ipcMain.on('buddy:dismiss-notification', (_event, notificationId) => {
+    replyHandlers.delete(notificationId)
+  })
+
+  // Settings — serve from cache, no repeated disk reads
   ipcMain.handle('buddy:get-settings', () => loadSettings())
   ipcMain.handle('buddy:save-settings', (_event, settings) => {
     saveSettings(settings)

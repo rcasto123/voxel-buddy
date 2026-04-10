@@ -6,6 +6,8 @@ export default defineConfig({
   base: './',
   build: {
     outDir: 'dist',
+    assetsDir: 'assets', // stable, predictable asset path for Electron loadFile
+    emptyOutDir: true,
   },
   server: {
     port: 5173,

@@ -1,11 +1,63 @@
 // src/App.jsx
-import { useEffect } from 'react'
+import { useEffect, Component } from 'react'
 import { useStore } from './store.js'
 import { DesktopPet } from './layouts/DesktopPet.jsx'
 
 // Future layouts imported here in later phases
 const LAYOUTS = {
   'desktop-pet': DesktopPet,
+}
+
+// Catches render-phase errors inside any layout and shows a minimal fallback
+// instead of leaving a blank transparent window with no way to recover.
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary] Render error:', error, info.componentStack)
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            background: 'rgba(30,10,10,0.85)',
+            border: '1px solid #f87171',
+            borderRadius: 12,
+            padding: '8px 14px',
+            color: '#f87171',
+            fontSize: 12,
+            fontFamily: 'monospace',
+            maxWidth: 280,
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <strong>Buddy crashed 😵</strong>
+          <br />
+          <span style={{ opacity: 0.7 }}>{String(this.state.error).slice(0, 120)}</span>
+          <br />
+          <button
+            style={{ marginTop: 6, color: '#f87171', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 11 }}
+            onClick={() => this.setState({ error: null })}
+          >
+            Try to recover
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
 
 export function App() {
@@ -23,5 +75,9 @@ export function App() {
 
   const Layout = LAYOUTS[layoutMode] ?? DesktopPet
 
-  return <Layout />
+  return (
+    <ErrorBoundary>
+      <Layout />
+    </ErrorBoundary>
+  )
 }

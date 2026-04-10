@@ -39,4 +39,10 @@ async function stopAll() {
   }
 }
 
-module.exports = { register, getAll, startAll, stopAll }
+// Reset registered integrations — used in tests to prevent state leaking between
+// test cases when the module is not fully reloaded via vi.resetModules().
+function reset() {
+  _integrations.length = 0
+}
+
+module.exports = { register, getAll, startAll, stopAll, reset }

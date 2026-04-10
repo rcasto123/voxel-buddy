@@ -132,10 +132,18 @@
 
 /* ── State rules ─────────────────────────────────────── */
 
-/* Base: GPU compositing hint + smooth filter change on state switch */
+/* Base: smooth filter change on state switch */
 .airie-img {
-  will-change: transform, filter;
   transition: filter 0.45s ease, opacity 0.45s ease;
+}
+
+/* Promote to GPU layer only on states with active, non-trivial animations */
+.airie--idle .airie-img,
+.airie--walk .airie-img,
+.airie--alert .airie-img,
+.airie--wave .airie-img,
+.airie--happy .airie-img {
+  will-change: transform, filter;
 }
 
 /* IDLE — organic float with wing-flap */
@@ -144,10 +152,10 @@
   filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28));
 }
 
-/* WALKING — hop cycle overrides idle (class added by DesktopPet) */
-.airie--walking .airie-img {
-  animation: airieHop 0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite !important;
-  filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28)) !important;
+/* WALK — hop cycle; 'walk' is now its own visual state so no !important needed */
+.airie--walk .airie-img {
+  animation: airieHop 0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite;
+  filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28));
 }
 
 /* ALERT — squash-stretch bounce + bright glow */

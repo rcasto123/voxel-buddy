@@ -1,5 +1,5 @@
 // src/components/SpeechBubble.jsx
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 
 /**
  * Props:
@@ -13,27 +13,43 @@ export function SpeechBubble({ notification, onDismiss, onReply, autoDismissMs =
   const [sent, setSent] = useState(false)
   const [exiting, setExiting] = useState(false)
 
-  function dismiss() {
-    setExiting(true)
-    setTimeout(onDismiss, 250)
-  }
+  // Always-current ref to onDismiss — avoids stale closure captures
+  const onDismissRef = useRef(onDismiss)
+  useEffect(() => { onDismissRef.current = onDismiss })
 
-  // Auto-dismiss timer — include dismiss in deps via useCallback to avoid stale closure
+  // Stable dismiss that routes through the ref
+  const dismiss = useCallback(() => {
+    setExiting(true)
+    setTimeout(() => onDismissRef.current(), 250)
+  }, [])
+
+  // Expose dismiss in a ref so timer callbacks always call the latest version
   const dismissRef = useRef(dismiss)
-  useEffect(() => { dismissRef.current = dismiss })
+  useEffect(() => { dismissRef.current = dismiss }, [dismiss])
+
+  // Auto-dismiss timer — can be paused / restarted by the reply input focus
+  const timerRef = useRef(null)
+
+  const clearTimer = useCallback(() => clearTimeout(timerRef.current), [])
+
+  const startTimer = useCallback(() => {
+    if (!autoDismissMs) return
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => dismissRef.current(), autoDismissMs)
+  }, [autoDismissMs])
 
   useEffect(() => {
-    if (!autoDismissMs) return
-    const timer = setTimeout(() => dismissRef.current(), autoDismissMs)
-    return () => clearTimeout(timer)
-  }, [autoDismissMs])
+    startTimer()
+    return clearTimer
+  }, [startTimer, clearTimer])
 
   function handleSend() {
     if (!replyText.trim()) return
+    clearTimer() // don't auto-dismiss after sending; we'll dismiss explicitly
     onReply(notification.id, replyText.trim())
     setSent(true)
     setReplyText('')
-    setTimeout(dismiss, 1000)
+    setTimeout(() => dismissRef.current(), 1000)
   }
 
   function handleKeyDown(e) {
@@ -50,7 +66,7 @@ export function SpeechBubble({ notification, onDismiss, onReply, autoDismissMs =
   return (
     <div
       className={`
-        ${exiting ? 'bubble-exit' : 'bubble-enter'}
+        ${exiting ? 'bubble-exit pointer-events-none' : 'bubble-enter'}
         w-72 rounded-2xl border border-buddy-border bg-buddy-surface shadow-2xl shadow-black/40
         flex flex-col gap-2 p-3 text-buddy-text relative
       `}
@@ -99,6 +115,8 @@ export function SpeechBubble({ notification, onDismiss, onReply, autoDismissMs =
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
               onKeyDown={handleKeyDown}
+              onFocus={clearTimer}
+              onBlur={startTimer}
               placeholder="Reply…"
               className="flex-1 bg-buddy-bg border border-buddy-border rounded-lg px-2.5 py-1.5
                 text-sm text-buddy-text placeholder:text-buddy-muted

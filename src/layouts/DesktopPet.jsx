@@ -16,7 +16,7 @@ export function DesktopPet() {
   const [activeBubble, setActiveBubble] = useState(null) // notification object or null
 
   const stateRef = useRef('idle')
-  const posXRef = useRef(window.innerWidth / 2)
+  const posXRef = useRef(posX)
   const facingRef = useRef(1)
   const lastTimeRef = useRef(performance.now())
   const idleAccumRef = useRef(0)
@@ -130,13 +130,13 @@ export function DesktopPet() {
     return () => cancelAnimationFrame(rafRef.current)
   }, [setState])
 
-  // Click mascot → wave
+  // Click mascot → wave + idle quip
   function handleMascotClick() {
     if (stateRef.current === 'alert' || stateRef.current === 'wave') return
     setState('wave', 2)
   }
 
-  // Mouse enter/leave: tell main process to disable/re-enable click-through
+  // Mouse enter/leave mascot: tell main process to disable/re-enable click-through
   function handleMouseEnter() { window.buddy?.setMouseOverMascot(true) }
   function handleMouseLeave() { window.buddy?.setMouseOverMascot(false) }
 

@@ -32,4 +32,11 @@ describe('MascotAirie', () => {
     render(<MascotAirie state="happy" />)
     expect(screen.getByLabelText('Airie is happy')).toBeTruthy()
   })
+
+  it('does not add wings-up class for thinking state', () => {
+    const { container } = render(<MascotAirie state="thinking" />)
+    const svg = container.querySelector('svg')
+    expect(svg.classList.contains('mascot--thinking')).toBe(true)
+    expect(svg.classList.contains('airie--wings-up')).toBe(false)
+  })
 })

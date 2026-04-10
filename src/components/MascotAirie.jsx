@@ -11,9 +11,9 @@ export function MascotAirie({ state = 'idle', size = 120, className = '' }) {
 
   // Pupils shift up-left when thinking
   const lPupilX = isThinking ? 48 : 51
-  const lPupilY = isThinking ? 34 : 38
+  const lPupilY = isThinking ? 27 : 32
   const rPupilX = isThinking ? 68 : 71
-  const rPupilY = isThinking ? 34 : 38
+  const rPupilY = isThinking ? 27 : 32
   const eyeR = isAlert ? 10 : 8
 
   return (

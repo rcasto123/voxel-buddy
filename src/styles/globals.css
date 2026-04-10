@@ -65,11 +65,11 @@
 /* ── Airie wing states ────────────────────────────────── */
 .airie--wings-up .airie-wing-left {
   transform: rotate(-35deg);
-  transform-origin: 38px 70px;
+  transform-origin: 42px 72px;
 }
 .airie--wings-up .airie-wing-right {
   transform: rotate(35deg);
-  transform-origin: 82px 70px;
+  transform-origin: 78px 72px;
 }
 
 /* ── Desktop Pet click-through helper ─────────────────── */

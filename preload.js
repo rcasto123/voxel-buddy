@@ -3,13 +3,13 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('buddy', {
   // ── Notifications ─────────────────────────────────────────────
-  // Returns a cleanup function — call it in useEffect cleanup to avoid listener leaks.
   onNotification: (callback) => {
     const handler = (_event, notification) => callback(notification)
     ipcRenderer.on('buddy:notification', handler)
     return () => ipcRenderer.removeListener('buddy:notification', handler)
   },
 
+  // Returns { ok: boolean, error?: string } so the UI can show send failures
   sendReply: (notificationId, text) =>
     ipcRenderer.invoke('buddy:send-reply', { notificationId, text }),
 
@@ -21,16 +21,24 @@ contextBridge.exposeInMainWorld('buddy', {
     ipcRenderer.send('buddy:mouse-over-mascot', isOver),
 
   // ── Settings ──────────────────────────────────────────────────
+  // Tokens returned here are always decrypted — never stored encrypted in renderer
   getSettings: () => ipcRenderer.invoke('buddy:get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('buddy:save-settings', settings),
 
   // ── Mute ──────────────────────────────────────────────────────
   setMuted: (muted) => ipcRenderer.invoke('buddy:set-muted', muted),
-  // Listen for tray-driven mute changes. Returns cleanup fn.
   onMuteChanged: (callback) => {
     const handler = (_event, muted) => callback(muted)
     ipcRenderer.on('buddy:mute-changed', handler)
     return () => ipcRenderer.removeListener('buddy:mute-changed', handler)
+  },
+
+  // ── Slack connection status ────────────────────────────────────
+  // Fires with { status: 'connecting'|'connected'|'reconnecting'|'disconnected'|'error', error?: string }
+  onSlackStatus: (callback) => {
+    const handler = (_event, statusInfo) => callback(statusInfo)
+    ipcRenderer.on('buddy:slack-status', handler)
+    return () => ipcRenderer.removeListener('buddy:slack-status', handler)
   },
 
   // ── Settings window ───────────────────────────────────────────

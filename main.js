@@ -1,15 +1,45 @@
 // main.js
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, shell, safeStorage } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
+const { autoUpdater } = require('electron-updater')
 const { register, startAll, stopAll, reset } = require('./integrations/index.js')
 
 const isDev = process.env.NODE_ENV === 'development'
 const SETTINGS_PATH = path.join(os.homedir(), '.voxelbuddy', 'settings.json')
+const ENC_PREFIX = 'enc:'
+
+// ── Token encryption (electron.safeStorage → OS keychain) ──────
+// Tokens are stored encrypted in settings.json. On platforms where
+// safeStorage is unavailable the raw value is stored with a warning.
+
+function encryptToken(value) {
+  if (!value) return value
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      return ENC_PREFIX + safeStorage.encryptString(value).toString('base64')
+    }
+  } catch (e) {
+    console.warn('[SafeStorage] Encryption unavailable:', e.message)
+  }
+  return value
+}
+
+function decryptToken(value) {
+  if (!value) return value
+  try {
+    if (typeof value === 'string' && value.startsWith(ENC_PREFIX)) {
+      const buf = Buffer.from(value.slice(ENC_PREFIX.length), 'base64')
+      return safeStorage.decryptString(buf)
+    }
+  } catch (e) {
+    console.warn('[SafeStorage] Decryption failed — returning raw value:', e.message)
+  }
+  return value // migration path: plaintext tokens from before encryption was added
+}
 
 // ── Settings helpers ────────────────────────────────────────────
-// Cached after first load — avoids repeated disk reads and TOCTOU issues.
 let _cachedSettings = null
 
 function loadSettings() {
@@ -27,19 +57,44 @@ function loadSettings() {
   return _cachedSettings
 }
 
+// Returns settings with tokens decrypted for consumption by the renderer
+function loadSettingsDecrypted() {
+  const s = loadSettings()
+  if (!s.integrations?.slack) return s
+  return {
+    ...s,
+    integrations: {
+      ...s.integrations,
+      slack: {
+        appToken: decryptToken(s.integrations.slack.appToken),
+        botToken: decryptToken(s.integrations.slack.botToken),
+      },
+    },
+  }
+}
+
 function saveSettings(settings) {
   try {
+    // Encrypt tokens before writing to disk
+    const toWrite = { ...settings }
+    if (toWrite.integrations?.slack) {
+      toWrite.integrations = {
+        ...toWrite.integrations,
+        slack: {
+          appToken: encryptToken(toWrite.integrations.slack.appToken),
+          botToken: encryptToken(toWrite.integrations.slack.botToken),
+        },
+      }
+    }
     fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true })
-    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2))
-    _cachedSettings = settings // keep cache in sync
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(toWrite, null, 2))
+    _cachedSettings = toWrite
   } catch (e) {
     console.warn('[Settings] Failed to save:', e.message)
   }
 }
 
 // ── Reply handler map ───────────────────────────────────────────
-// Populated by integration adapters. Key = notificationId, Value = async fn(text)
-// Entries are deleted after the reply is sent or the notification is dismissed.
 const replyHandlers = new Map()
 
 // ── Windows ────────────────────────────────────────────────────
@@ -77,6 +132,19 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, 'dist', 'index.html'))
   }
+
+  // Multi-monitor: resize overlay to follow the primary display whenever
+  // the display configuration changes (plug/unplug, resolution change, etc.)
+  screen.on('display-added', updateWindowBounds)
+  screen.on('display-removed', updateWindowBounds)
+  screen.on('display-metrics-changed', updateWindowBounds)
+}
+
+function updateWindowBounds() {
+  if (!win || win.isDestroyed()) return
+  const { x, y, width, height } = screen.getPrimaryDisplay().bounds
+  win.setBounds({ x, y, width, height })
+  console.log('[Screen] Display changed — overlay resized to', { x, y, width, height })
 }
 
 function openSettingsWindow() {
@@ -111,7 +179,6 @@ function openSettingsWindow() {
 
 // ── Tray ────────────────────────────────────────────────────────
 function getTrayIconPath() {
-  // In packaged builds, resources live outside the asar in resourcesPath
   const filename = process.platform === 'darwin' ? 'tray-iconTemplate.png' : 'tray-icon.png'
   return app.isPackaged
     ? path.join(process.resourcesPath, 'assets', filename)
@@ -126,7 +193,6 @@ function rebuildTrayMenu() {
   const menu = Menu.buildFromTemplate([
     {
       label: muted ? 'Unmute notifications' : 'Mute notifications',
-      type: 'normal',
       click: () => {
         const s = loadSettings()
         s.muted = !s.muted
@@ -137,7 +203,6 @@ function rebuildTrayMenu() {
     },
     {
       label: autoStart ? 'Disable auto-start' : 'Enable auto-start',
-      type: 'normal',
       click: () => {
         const next = !autoStart
         app.setLoginItemSettings({ openAtLogin: next, openAsHidden: true })
@@ -166,7 +231,6 @@ function createTray() {
   tray.setToolTip('Voxel Buddy')
   rebuildTrayMenu()
 
-  // On macOS left-click opens context menu; on Windows open settings
   if (process.platform !== 'darwin') {
     tray.on('click', openSettingsWindow)
   }
@@ -174,7 +238,6 @@ function createTray() {
 
 // ── IPC handlers ────────────────────────────────────────────────
 function registerIPC() {
-  // Mouse over mascot → disable/re-enable click-through
   ipcMain.on('buddy:mouse-over-mascot', (_event, isOver) => {
     if (!win) return
     if (isOver) {
@@ -186,36 +249,36 @@ function registerIPC() {
     }
   })
 
-  // Send reply via the correct integration, then clean up the handler
+  // Send reply — return { ok: true } or { ok: false, error } so renderer can show feedback
   ipcMain.handle('buddy:send-reply', async (_event, { notificationId, text }) => {
     const fn = replyHandlers.get(notificationId)
     if (!fn) {
       console.warn('[IPC] No reply handler for', notificationId)
-      return
+      return { ok: false, error: 'No handler found' }
     }
     try {
       await fn(text)
       console.log('[IPC] Reply sent for', notificationId)
+      return { ok: true }
     } catch (e) {
       console.error('[IPC] Reply failed:', e.message)
+      return { ok: false, error: e.message }
     } finally {
       replyHandlers.delete(notificationId)
     }
   })
 
-  // Notification dismissed without replying — clean up the handler
   ipcMain.on('buddy:dismiss-notification', (_event, notificationId) => {
     replyHandlers.delete(notificationId)
   })
 
-  // Settings — serve from cache, no repeated disk reads
-  ipcMain.handle('buddy:get-settings', () => loadSettings())
+  // Settings — always return decrypted values to the renderer
+  ipcMain.handle('buddy:get-settings', () => loadSettingsDecrypted())
   ipcMain.handle('buddy:save-settings', (_event, settings) => {
-    saveSettings(settings)
+    saveSettings(settings) // encrypts tokens before writing
     return true
   })
 
-  // Mute — renderer-driven (from Settings panel)
   ipcMain.handle('buddy:set-muted', (_event, muted) => {
     const s = loadSettings()
     s.muted = muted
@@ -225,19 +288,16 @@ function registerIPC() {
     return true
   })
 
-  // Open settings window from renderer (onboarding card, etc.)
   ipcMain.on('buddy:open-settings-window', openSettingsWindow)
 
-  // Restart integrations after token change
   ipcMain.handle('buddy:restart-integrations', async () => {
     await stopAll()
     reset()
-    _cachedSettings = null // bust cache so new tokens are read
+    _cachedSettings = null
     await startIntegrations()
     return true
   })
 
-  // Auto-start
   ipcMain.handle('buddy:set-login-item', (_event, enabled) => {
     app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true })
     const s = loadSettings()
@@ -251,9 +311,7 @@ function registerIPC() {
     return app.getLoginItemSettings().openAtLogin
   })
 
-  // Open external URLs safely (for onboarding links)
   ipcMain.handle('buddy:open-external', (_event, url) => {
-    // Only allow http/https to prevent abuse
     if (url.startsWith('https://') || url.startsWith('http://')) {
       shell.openExternal(url)
     }
@@ -262,51 +320,74 @@ function registerIPC() {
 
 // ── Integrations ────────────────────────────────────────────────
 async function startIntegrations() {
-  const settings = loadSettings()
+  const settings = loadSettingsDecrypted() // use decrypted tokens
   const slackSettings = settings.integrations?.slack ?? {}
   const appToken = slackSettings.appToken || process.env.SLACK_APP_TOKEN
   const botToken = slackSettings.botToken || process.env.SLACK_BOT_TOKEN
 
-  // integrations/slack.js is ESM — use dynamic import() from this CJS main process
-  const { createSlackAdapter } = await import('./integrations/slack.js')
+  const { createSlackAdapter } = await import('./integrations/slack.mjs')
   const slackAdapter = createSlackAdapter({ appToken, botToken })
 
   function onNotification(notification) {
-    // Sync reply handlers — adapter sets them before calling onNotification
     slackAdapter.replyHandlers.forEach((fn, id) => replyHandlers.set(id, fn))
-
     if (win && !win.isDestroyed()) {
       win.webContents.send('buddy:notification', notification)
     }
   }
 
+  function onStatus(statusInfo) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('buddy:slack-status', statusInfo)
+    }
+    // Also forward to settings window if open
+    if (settingsWin && !settingsWin.isDestroyed()) {
+      settingsWin.webContents.send('buddy:slack-status', statusInfo)
+    }
+  }
+
   register({
     name: 'slack',
-    start: (onNotif) => slackAdapter.start(onNotif),
+    start: (onNotif) => slackAdapter.start(onNotif, onStatus),
     stop: () => slackAdapter.stop(),
   })
 
   await startAll(onNotification)
 }
 
+// ── Auto-updater ────────────────────────────────────────────────
+function setupAutoUpdater() {
+  if (isDev) return // skip in development
+
+  autoUpdater.logger = console
+  autoUpdater.checkForUpdatesAndNotify()
+
+  autoUpdater.on('update-available', () => {
+    console.log('[Updater] Update available — downloading…')
+  })
+
+  autoUpdater.on('update-downloaded', () => {
+    console.log('[Updater] Update downloaded — will install on quit')
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.warn('[Updater] Error:', err.message)
+  })
+}
+
 // ── App lifecycle ───────────────────────────────────────────────
 app.whenReady().then(async () => {
-  // Hide from macOS dock — we live in the system tray only
   if (process.platform === 'darwin') app.dock.hide()
-
   registerIPC()
   createWindow()
   createTray()
   await startIntegrations()
+  setupAutoUpdater()
 })
 
-// On macOS, keep the app alive when all windows are closed
-// (the tray is the only UI surface)
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-// Graceful shutdown — wait for integrations to disconnect before quitting
 let _isQuitting = false
 app.on('before-quit', async (e) => {
   if (_isQuitting) return

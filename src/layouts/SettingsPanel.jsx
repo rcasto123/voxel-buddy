@@ -1,10 +1,20 @@
 // src/layouts/SettingsPanel.jsx
 import { useState, useEffect, useRef } from 'react'
+import { useStore } from '../store.js'
 
 const MASCOTS = [
   { id: 'airie', label: 'Airie', description: 'Teal robot with wings' },
   { id: 'buddy', label: 'Buddy', description: 'Classic blob companion' },
 ]
+
+const STATUS_CONFIG = {
+  connected:    { dot: 'bg-green-400',  label: 'Connected' },
+  connecting:   { dot: 'bg-yellow-400 animate-pulse', label: 'Connecting…' },
+  reconnecting: { dot: 'bg-yellow-400 animate-pulse', label: 'Reconnecting…' },
+  disconnected: { dot: 'bg-red-400',    label: 'Disconnected' },
+  error:        { dot: 'bg-red-400',    label: 'Error' },
+  unknown:      { dot: 'bg-buddy-muted', label: 'Not connected' },
+}
 
 function Field({ label, hint, children }) {
   return (
@@ -45,7 +55,22 @@ function TokenInput({ label, value, onChange, placeholder }) {
   )
 }
 
+function SlackStatusBadge({ status, error }) {
+  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
+      <span className="text-xs text-buddy-muted">{cfg.label}</span>
+      {status === 'error' && error && (
+        <span className="text-xs text-red-400 truncate max-w-[180px]" title={error}>— {error}</span>
+      )}
+    </div>
+  )
+}
+
 export function SettingsPanel() {
+  const { slackStatus, slackError, setSlackStatus } = useStore()
+
   const [form, setForm] = useState({
     mascotName: 'Buddy',
     mascotCharacter: 'airie',
@@ -54,11 +79,16 @@ export function SettingsPanel() {
     autoStart: false,
     muted: false,
   })
-  const [status, setStatus] = useState(null) // null | 'saving' | 'saved' | 'error'
+  const [saveStatus, setSaveStatus] = useState(null) // null | 'saving' | 'saved' | 'error'
   const [tokensChanged, setTokensChanged] = useState(false)
   const originalTokens = useRef({ app: '', bot: '' })
 
-  // Load current settings from main process on mount
+  // Listen for connection status updates pushed from main process
+  useEffect(() => {
+    if (!window.buddy) return
+    return window.buddy.onSlackStatus(setSlackStatus)
+  }, [setSlackStatus])
+
   useEffect(() => {
     async function load() {
       try {
@@ -86,14 +116,12 @@ export function SettingsPanel() {
 
   function update(key, value) {
     setForm((f) => ({ ...f, [key]: value }))
-    setStatus(null)
-    if (key === 'slackAppToken' || key === 'slackBotToken') {
-      setTokensChanged(true)
-    }
+    setSaveStatus(null)
+    if (key === 'slackAppToken' || key === 'slackBotToken') setTokensChanged(true)
   }
 
   async function handleSave() {
-    setStatus('saving')
+    setSaveStatus('saving')
     try {
       const settings = {
         mascotName: form.mascotName,
@@ -117,16 +145,12 @@ export function SettingsPanel() {
 
       originalTokens.current = { app: form.slackAppToken, bot: form.slackBotToken }
       setTokensChanged(false)
-      setStatus('saved')
-      setTimeout(() => setStatus(null), 3000)
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus(null), 3000)
     } catch (e) {
       console.error('[Settings] Save failed:', e)
-      setStatus('error')
+      setSaveStatus('error')
     }
-  }
-
-  function openSlackDocs() {
-    window.buddy?.openExternal('https://api.slack.com/apps')
   }
 
   return (
@@ -134,10 +158,12 @@ export function SettingsPanel() {
       {/* Header */}
       <div className="flex items-center gap-3 px-6 py-4 border-b border-buddy-border">
         <span className="text-2xl">🤖</span>
-        <div>
+        <div className="flex-1">
           <h1 className="text-base font-bold text-buddy-text">Voxel Buddy</h1>
           <p className="text-xs text-buddy-muted">Settings</p>
         </div>
+        {/* Live Slack status in header */}
+        <SlackStatusBadge status={slackStatus} error={slackError} />
       </div>
 
       {/* Form */}
@@ -169,8 +195,7 @@ export function SettingsPanel() {
                   className={`flex-1 py-3 rounded-xl border text-sm font-medium transition-colors
                     ${form.mascotCharacter === m.id
                       ? 'border-buddy-glow/60 bg-buddy-glow/10 text-buddy-glow'
-                      : 'border-buddy-border text-buddy-muted hover:border-buddy-glow/30'
-                    }`}
+                      : 'border-buddy-border text-buddy-muted hover:border-buddy-glow/30'}`}
                 >
                   <div className="font-semibold">{m.label}</div>
                   <div className="text-xs opacity-70 mt-0.5">{m.description}</div>
@@ -188,11 +213,25 @@ export function SettingsPanel() {
             <h2 className="text-xs font-bold text-buddy-glow uppercase tracking-widest">Slack</h2>
             <button
               type="button"
-              onClick={openSlackDocs}
+              onClick={() => window.buddy?.openExternal('https://api.slack.com/apps')}
               className="text-xs text-buddy-glow/70 hover:text-buddy-glow underline underline-offset-2 transition-colors"
             >
               Get tokens →
             </button>
+          </div>
+
+          {/* Live connection status */}
+          <div className="flex items-center justify-between bg-buddy-bg rounded-lg px-3 py-2.5 border border-buddy-border">
+            <SlackStatusBadge status={slackStatus} error={slackError} />
+            {(slackStatus === 'error' || slackStatus === 'disconnected') && (
+              <button
+                type="button"
+                onClick={() => window.buddy?.restartIntegrations()}
+                className="text-xs text-buddy-glow underline underline-offset-2 hover:opacity-80"
+              >
+                Reconnect
+              </button>
+            )}
           </div>
 
           <TokenInput
@@ -222,8 +261,8 @@ export function SettingsPanel() {
           <h2 className="text-xs font-bold text-buddy-glow uppercase tracking-widest">Behaviour</h2>
 
           {[
-            { key: 'muted', label: 'Mute notifications', description: 'Buddy wanders but hides message bubbles' },
-            { key: 'autoStart', label: 'Launch at login', description: 'Start Voxel Buddy when you log in' },
+            { key: 'muted',     label: 'Mute notifications', description: 'Buddy wanders but hides message bubbles' },
+            { key: 'autoStart', label: 'Launch at login',    description: 'Start Voxel Buddy when you log in' },
           ].map(({ key, label, description }) => (
             <label key={key} className="flex items-center justify-between gap-4 cursor-pointer group">
               <div>
@@ -238,27 +277,25 @@ export function SettingsPanel() {
                 className={`relative w-10 h-6 rounded-full transition-colors duration-200 shrink-0
                   ${form[key] ? 'bg-buddy-glow/80' : 'bg-buddy-border'}`}
               >
-                <span
-                  className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all duration-200
-                    ${form[key] ? 'left-5' : 'left-1'}`}
-                />
+                <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all duration-200
+                  ${form[key] ? 'left-5' : 'left-1'}`} />
               </button>
             </label>
           ))}
         </section>
       </div>
 
-      {/* Footer / Save */}
+      {/* Footer */}
       <div className="px-6 py-4 border-t border-buddy-border flex items-center justify-between gap-4">
         <div className="text-xs">
-          {status === 'saving' && <span className="text-buddy-muted">Saving…</span>}
-          {status === 'saved' && <span className="text-buddy-glow">✓ Saved</span>}
-          {status === 'error' && <span className="text-red-400">Save failed — check console</span>}
+          {saveStatus === 'saving' && <span className="text-buddy-muted">Saving…</span>}
+          {saveStatus === 'saved'  && <span className="text-buddy-glow">✓ Saved</span>}
+          {saveStatus === 'error'  && <span className="text-red-400">Save failed — check console</span>}
         </div>
         <button
           type="button"
           onClick={handleSave}
-          disabled={status === 'saving'}
+          disabled={saveStatus === 'saving'}
           className="px-5 py-2 rounded-xl text-sm font-semibold bg-buddy-glow/20 text-buddy-glow
             border border-buddy-glow/40 hover:bg-buddy-glow/30 transition-colors
             disabled:opacity-40 disabled:cursor-not-allowed"

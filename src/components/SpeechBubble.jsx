@@ -5,58 +5,76 @@ import { useState, useEffect, useRef, useCallback } from 'react'
  * Props:
  *   notification: { id, source, type, sender: { name }, text }
  *   onDismiss: () => void
- *   onReply: (notificationId, text) => void
+ *   onReply: async (notificationId, text) => { ok: boolean, error?: string }
+ *   onReplySending: () => void   — called when send starts (triggers thinking animation)
+ *   onReplyDone: () => void      — called when send completes (exits thinking)
  *   autoDismissMs: number (default 8000, 0 = never)
  */
-export function SpeechBubble({ notification, onDismiss, onReply, autoDismissMs = 8000 }) {
+export function SpeechBubble({
+  notification,
+  onDismiss,
+  onReply,
+  onReplySending,
+  onReplyDone,
+  autoDismissMs = 8000,
+}) {
   const [replyText, setReplyText] = useState('')
-  const [sent, setSent] = useState(false)
+  const [sendState, setSendState] = useState('idle') // 'idle' | 'sending' | 'sent' | 'error'
+  const [sendError, setSendError] = useState(null)
   const [exiting, setExiting] = useState(false)
 
-  // Always-current ref to onDismiss — avoids stale closure captures
   const onDismissRef = useRef(onDismiss)
   useEffect(() => { onDismissRef.current = onDismiss })
 
-  // Stable dismiss that routes through the ref
   const dismiss = useCallback(() => {
     setExiting(true)
     setTimeout(() => onDismissRef.current(), 250)
   }, [])
 
-  // Expose dismiss in a ref so timer callbacks always call the latest version
   const dismissRef = useRef(dismiss)
   useEffect(() => { dismissRef.current = dismiss }, [dismiss])
 
-  // Auto-dismiss timer — can be paused / restarted by the reply input focus
   const timerRef = useRef(null)
-
   const clearTimer = useCallback(() => clearTimeout(timerRef.current), [])
-
   const startTimer = useCallback(() => {
     if (!autoDismissMs) return
     clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => dismissRef.current(), autoDismissMs)
   }, [autoDismissMs])
 
-  useEffect(() => {
-    startTimer()
-    return clearTimer
-  }, [startTimer, clearTimer])
+  useEffect(() => { startTimer(); return clearTimer }, [startTimer, clearTimer])
 
-  function handleSend() {
-    if (!replyText.trim()) return
-    clearTimer() // don't auto-dismiss after sending; we'll dismiss explicitly
-    onReply(notification.id, replyText.trim())
-    setSent(true)
+  async function handleSend() {
+    if (!replyText.trim() || sendState === 'sending') return
+    clearTimer()
+    const text = replyText.trim()
     setReplyText('')
-    setTimeout(() => dismissRef.current(), 1000)
+    setSendState('sending')
+    onReplySending?.()
+
+    try {
+      const result = await onReply(notification.id, text)
+      onReplyDone?.()
+
+      if (result?.ok === false) {
+        setSendState('error')
+        setSendError(result.error ?? 'Send failed')
+        // Restart timer so error state doesn't stay forever
+        startTimer()
+      } else {
+        setSendState('sent')
+        setTimeout(() => dismissRef.current(), 1000)
+      }
+    } catch (e) {
+      onReplyDone?.()
+      setSendState('error')
+      setSendError(e.message ?? 'Unknown error')
+      startTimer()
+    }
   }
 
   function handleKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
     if (e.key === 'Escape') dismiss()
   }
 
@@ -64,20 +82,17 @@ export function SpeechBubble({ notification, onDismiss, onReply, autoDismissMs =
   const sourceLabel = notification.source === 'slack' ? '🔔 Slack' : '📧 Gmail'
 
   return (
-    <div
-      className={`
-        ${exiting ? 'bubble-exit pointer-events-none' : 'bubble-enter'}
-        w-72 rounded-2xl border border-buddy-border bg-buddy-surface shadow-2xl shadow-black/40
-        flex flex-col gap-2 p-3 text-buddy-text relative
-      `}
-    >
-      {/* Bubble tail (pointing down toward mascot) */}
+    <div className={`
+      ${exiting ? 'bubble-exit pointer-events-none' : 'bubble-enter'}
+      w-72 rounded-2xl border border-buddy-border bg-buddy-surface shadow-2xl shadow-black/40
+      flex flex-col gap-2 p-3 text-buddy-text relative
+    `}>
+      {/* Bubble tail */}
       <div className="absolute bottom-[-10px] left-1/2 -translate-x-1/2 w-0 h-0
-        border-l-[10px] border-l-transparent
-        border-r-[10px] border-r-transparent
+        border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent
         border-t-[10px] border-t-buddy-border" />
 
-      {/* ── Layer 1: Notification ── */}
+      {/* Notification */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-0.5">
@@ -87,16 +102,12 @@ export function SpeechBubble({ notification, onDismiss, onReply, autoDismissMs =
           <p className="text-xs font-semibold text-buddy-glow truncate">{notification.sender.name}</p>
           <p className="text-sm leading-snug line-clamp-2 mt-0.5">{notification.text}</p>
         </div>
-        <button
-          onClick={dismiss}
+        <button onClick={dismiss}
           className="shrink-0 text-buddy-muted hover:text-buddy-text text-lg leading-none -mt-0.5"
-          aria-label="Dismiss"
-        >
-          ×
-        </button>
+          aria-label="Dismiss">×</button>
       </div>
 
-      {/* ── Layer 2: AI quip placeholder ── */}
+      {/* AI quip placeholder */}
       <div className="border-t border-buddy-border pt-2">
         <p className="text-xs text-buddy-muted italic">
           💬 <span className="text-buddy-glow/70">Buddy</span>
@@ -104,31 +115,34 @@ export function SpeechBubble({ notification, onDismiss, onReply, autoDismissMs =
         </p>
       </div>
 
-      {/* ── Layer 3: Reply input ── */}
+      {/* Reply input */}
       <div className="border-t border-buddy-border pt-2 flex gap-2">
-        {sent ? (
+        {sendState === 'sent' && (
           <p className="text-xs text-buddy-glow w-full text-center py-1">Sent ✓</p>
-        ) : (
+        )}
+        {sendState === 'sending' && (
+          <p className="text-xs text-buddy-muted w-full text-center py-1 animate-pulse">Sending…</p>
+        )}
+        {sendState === 'error' && (
+          <div className="flex-1 flex flex-col gap-1.5">
+            <p className="text-xs text-red-400">Failed: {sendError}</p>
+            <button onClick={() => { setSendState('idle'); setSendError(null) }}
+              className="text-xs text-buddy-muted underline text-left">Try again</button>
+          </div>
+        )}
+        {sendState === 'idle' && (
           <>
-            <input
-              type="text"
-              value={replyText}
+            <input type="text" value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onFocus={clearTimer}
-              onBlur={startTimer}
+              onKeyDown={handleKeyDown} onFocus={clearTimer} onBlur={startTimer}
               placeholder="Reply…"
               className="flex-1 bg-buddy-bg border border-buddy-border rounded-lg px-2.5 py-1.5
                 text-sm text-buddy-text placeholder:text-buddy-muted
-                focus:outline-none focus:border-buddy-glow/60 transition-colors"
-            />
-            <button
-              onClick={handleSend}
-              disabled={!replyText.trim()}
+                focus:outline-none focus:border-buddy-glow/60 transition-colors" />
+            <button onClick={handleSend} disabled={!replyText.trim()}
               className="px-3 py-1.5 rounded-lg text-xs font-medium bg-buddy-glow/20 text-buddy-glow
                 border border-buddy-glow/30 hover:bg-buddy-glow/30
-                disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
+                disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
               Send
             </button>
           </>

@@ -1,8 +1,6 @@
 // src/store.js
 import { create } from 'zustand'
 
-// 'walk' is now a valid visual state — maps to .airie--walk CSS class with its
-// own hop animation, avoiding the need for !important overrides.
 const VALID_STATES = new Set(['idle', 'walk', 'alert', 'wave', 'sleep', 'thinking', 'happy'])
 const MAX_NOTIFICATIONS = 50
 
@@ -12,6 +10,11 @@ export const useStore = create((set, get) => ({
   layoutMode: 'desktop-pet',
   isMuted: false,
   isFirstRun: false,
+
+  // 'unknown' before first status event; one of:
+  // 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error'
+  slackStatus: 'unknown',
+  slackError: null,
 
   settings: {
     mascotName: 'Buddy',
@@ -40,12 +43,12 @@ export const useStore = create((set, get) => ({
 
   setFirstRun: (v) => set({ isFirstRun: v }),
 
+  setSlackStatus: ({ status, error = null }) => set({ slackStatus: status, slackError: error }),
+
   updateSettings: (partial) =>
     set((state) => ({
       settings: { ...state.settings, ...partial },
     })),
 
-  // Derived count — use useStore(s => s.notifications.length) in components
-  // for reactive subscriptions, or getState().unreadCount() imperatively.
   unreadCount: () => get().notifications.length,
 }))

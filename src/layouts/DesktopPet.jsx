@@ -20,6 +20,7 @@ export function DesktopPet() {
 
   const [posX, setPosX] = useState(window.innerWidth / 2)
   const [facing, setFacing] = useState(1) // 1 = right, -1 = left
+  const [isWalking, setIsWalking] = useState(false)
   const [activeBubble, setActiveBubble] = useState(null) // notification object or null
 
   const stateRef = useRef('idle')
@@ -39,6 +40,7 @@ export function DesktopPet() {
     stateTimerRef.current = 0
     stateDurationRef.current = duration ?? rand(3, 6)
     setMascotState(VISUAL_STATE[s] ?? 'idle')
+    setIsWalking(s === 'walk')
 
     if (s === 'alert' || s === 'wave') {
       idleAccumRef.current = 0
@@ -191,7 +193,7 @@ export function DesktopPet() {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <MascotRenderer state={mascotState} size={MASCOT_SIZE} />
+        <MascotRenderer state={mascotState} size={MASCOT_SIZE} walking={isWalking} />
       </div>
     </div>
   )

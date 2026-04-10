@@ -3,22 +3,18 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Mascot state animations ─────────────────────────── */
+/* ── Buddy (SVG blob) state animations ───────────────── */
 
-/* idle: breathing body, floating particles, pulsing glow */
 .mascot--idle .mascot-body {
   animation: breathe 3s ease-in-out infinite;
   transform-origin: center;
 }
-.mascot--idle .mascot-glow {
-  animation: pulseGlow 3s ease-in-out infinite;
-}
-.mascot--idle .particle { animation: float 3s ease-in-out infinite; }
+.mascot--idle .mascot-glow  { animation: pulseGlow 3s ease-in-out infinite; }
+.mascot--idle .particle     { animation: float 3s ease-in-out infinite; }
 .mascot--idle .particle:nth-child(2) { animation-delay: 1s; }
 .mascot--idle .particle:nth-child(3) { animation-delay: 2s; }
 .mascot--idle .particle:nth-child(4) { animation-delay: 0.5s; }
 
-/* alert: bounce + red glow */
 .mascot--alert .mascot-body {
   animation: bounceSoft 0.4s ease-in-out 2;
   transform-origin: center;
@@ -28,7 +24,6 @@
   stroke: #f87171;
 }
 
-/* wave: right arm waves */
 .mascot--wave .mascot-body {
   animation: breathe 2s ease-in-out infinite;
   transform-origin: center;
@@ -38,38 +33,153 @@
   transform-origin: 98px 66px;
 }
 
-/* sleep: slow breathing, dim glow */
 .mascot--sleep .mascot-body {
   animation: breathe 6s ease-in-out infinite;
   transform-origin: center;
 }
 .mascot--sleep .mascot-glow { opacity: 0.1; }
 
-/* thinking: fast particles */
-.mascot--thinking .particle { animation: float 0.8s ease-in-out infinite; }
-.mascot--thinking .mascot-glow {
-  animation: pulseGlow 1s ease-in-out infinite;
-}
+.mascot--thinking .particle      { animation: float 0.8s ease-in-out infinite; }
+.mascot--thinking .mascot-glow   { animation: pulseGlow 1s ease-in-out infinite; }
 
-/* happy: bounce + bright glow */
 .mascot--happy .mascot-body {
   animation: bounceSoft 0.3s ease-in-out 2;
   transform-origin: center;
 }
 .mascot--happy .mascot-glow { opacity: 0.75; }
 
-/* ── Speech bubble animation ──────────────────────────── */
-.bubble-enter { animation: slideUp 0.25s ease-out; }
-.bubble-exit  { animation: fadeOut 0.25s ease-in forwards; }
+/* ── Speech bubble animations ─────────────────────────── */
+.bubble-enter { animation: slideUp  0.25s ease-out; }
+.bubble-exit  { animation: fadeOut  0.25s ease-in forwards; }
 
-/* ── Airie image-based mascot animations ─────────────── */
-/* Applied to the <img> child inside the state wrapper div */
-.airie--idle    .airie-img { animation: breathe   3s   ease-in-out infinite; transform-origin: center bottom; }
-.airie--sleep   .airie-img { animation: breathe   6s   ease-in-out infinite; transform-origin: center bottom; opacity: 0.85; }
-.airie--alert   .airie-img { animation: bounceSoft 0.4s ease-in-out 2;       transform-origin: center bottom; }
-.airie--wave    .airie-img { animation: breathe   2s   ease-in-out infinite; transform-origin: center bottom; }
-.airie--thinking .airie-img { animation: breathe  2.5s ease-in-out infinite; transform-origin: center bottom; }
-.airie--happy   .airie-img { animation: bounceSoft 0.35s ease-in-out 3;     transform-origin: center bottom; }
+/* ════════════════════════════════════════════════════════
+   AIRIE — image-based mascot
+   All animations target .airie-img inside the state wrapper.
+   ════════════════════════════════════════════════════════ */
 
-/* ── Desktop Pet click-through helper ─────────────────── */
+/* ── Keyframes ─────────────────────────────────────────── */
+
+/* Idle float: organic hover + wing-flap simulation via scaleX */
+@keyframes airieFloat {
+  0%   { transform: translateY(0px)   scaleX(1)    rotate(0deg); }
+  18%  { transform: translateY(-7px)  scaleX(1.06) rotate(0.7deg); }
+  38%  { transform: translateY(-4px)  scaleX(0.96) rotate(-0.4deg); }
+  58%  { transform: translateY(-10px) scaleX(1.05) rotate(0.6deg); }
+  80%  { transform: translateY(-5px)  scaleX(0.97) rotate(-0.3deg); }
+  100% { transform: translateY(0px)   scaleX(1)    rotate(0deg); }
+}
+
+/* Walk hop: quick spring step — plays while she wanders */
+@keyframes airieHop {
+  0%, 100% { transform: translateY(0)    scaleX(1)    rotate(0deg); }
+  22%       { transform: translateY(-9px) scaleX(1.07) rotate(1.2deg); }
+  50%       { transform: translateY(1px)  scaleX(0.95) rotate(0deg); }
+  72%       { transform: translateY(-6px) scaleX(1.05) rotate(-0.8deg); }
+}
+
+/* Alert bounce: big excited jump with squash & stretch */
+@keyframes airieAlertBounce {
+  0%   { transform: translateY(0)     scaleX(1)    scaleY(1); }
+  8%   { transform: translateY(-22px) scaleX(1.12) scaleY(0.88); }
+  18%  { transform: translateY(3px)   scaleX(0.91) scaleY(1.06); }
+  28%  { transform: translateY(-15px) scaleX(1.08) scaleY(0.92); }
+  40%  { transform: translateY(2px)   scaleX(0.95) scaleY(1.03); }
+  52%  { transform: translateY(-8px)  scaleX(1.04) scaleY(0.97); }
+  64%  { transform: translateY(1px)   scaleX(0.98) scaleY(1.01); }
+  78%  { transform: translateY(-3px)  scaleX(1.01) scaleY(0.99); }
+  100% { transform: translateY(0)     scaleX(1)    scaleY(1); }
+}
+
+/* Wave flutter: fast excited hovering with visible wing flap */
+@keyframes airieWaveFlutter {
+  0%, 100% { transform: translateY(-4px)  scaleX(1)    rotate(0deg); }
+  20%       { transform: translateY(-14px) scaleX(1.10) rotate(-2.5deg); }
+  50%       { transform: translateY(-4px)  scaleX(0.93) rotate(0deg); }
+  80%       { transform: translateY(-14px) scaleX(1.08) rotate(2.5deg); }
+}
+
+/* Sleep breathe: very slow, peaceful */
+@keyframes airieSleepBreathe {
+  0%, 100% { transform: scale(1)    translateY(0);   opacity: 0.82; }
+  50%       { transform: scale(1.04) translateY(-3px); opacity: 0.9; }
+}
+
+/* Thinking sway: gentle pendulum */
+@keyframes airieThinkSway {
+  0%, 100% { transform: translateY(0)    rotate(0deg); }
+  25%       { transform: translateY(-6px) rotate(-2.8deg); }
+  50%       { transform: translateY(-2px) rotate(0.5deg); }
+  75%       { transform: translateY(-5px) rotate(2.2deg); }
+}
+
+/* Happy wiggle: joyful full-body celebration */
+@keyframes airieHappyWiggle {
+  0%   { transform: rotate(0deg)    scale(1)    translateY(0); }
+  10%  { transform: rotate(-11deg)  scale(1.10) translateY(-14px); }
+  22%  { transform: rotate(11deg)   scale(1.08) translateY(-11px); }
+  34%  { transform: rotate(-8deg)   scale(1.05) translateY(-7px); }
+  46%  { transform: rotate(6deg)    scale(1.03) translateY(-4px); }
+  60%  { transform: rotate(-3.5deg) scale(1.01) translateY(-2px); }
+  76%  { transform: rotate(2deg)    scale(1)    translateY(-1px); }
+  100% { transform: rotate(0deg)    scale(1)    translateY(0); }
+}
+
+/* Glow pulse (layered on wave + alert) */
+@keyframes airieGlowPulse {
+  0%, 100% { filter: drop-shadow(0 6px 20px rgba(96, 210, 196, 0.55)); }
+  50%       { filter: drop-shadow(0 10px 36px rgba(96, 210, 196, 1)); }
+}
+
+/* ── State rules ─────────────────────────────────────── */
+
+/* Base: GPU compositing hint + smooth filter change on state switch */
+.airie-img {
+  will-change: transform, filter;
+  transition: filter 0.45s ease, opacity 0.45s ease;
+}
+
+/* IDLE — organic float with wing-flap */
+.airie--idle .airie-img {
+  animation: airieFloat 3.8s ease-in-out infinite;
+  filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28));
+}
+
+/* WALKING — hop cycle overrides idle (class added by DesktopPet) */
+.airie--walking .airie-img {
+  animation: airieHop 0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite !important;
+  filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28)) !important;
+}
+
+/* ALERT — squash-stretch bounce + bright glow */
+.airie--alert .airie-img {
+  animation: airieAlertBounce 0.85s cubic-bezier(0.36, 0.07, 0.19, 0.97) 2,
+             airieGlowPulse    0.6s ease-in-out infinite;
+  filter: drop-shadow(0 8px 28px rgba(96, 210, 196, 0.75));
+}
+
+/* WAVE — fast flutter + pulsing glow */
+.airie--wave .airie-img {
+  animation: airieWaveFlutter 0.55s ease-in-out infinite,
+             airieGlowPulse   0.8s ease-in-out infinite;
+}
+
+/* SLEEP — slow breathing, dims and softens */
+.airie--sleep .airie-img {
+  animation: airieSleepBreathe 5.5s ease-in-out infinite;
+  filter: drop-shadow(0 4px 10px rgba(160, 210, 240, 0.18));
+}
+
+/* THINKING — pendulum sway */
+.airie--thinking .airie-img {
+  animation: airieThinkSway 2.5s ease-in-out infinite;
+  filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.25));
+}
+
+/* HAPPY — full-body wiggle + peak glow */
+.airie--happy .airie-img {
+  animation: airieHappyWiggle 0.68s ease-in-out 2;
+  filter: drop-shadow(0 8px 32px rgba(96, 210, 196, 0.88));
+}
+
+/* ── Desktop Pet ──────────────────────────────────────── */
 body { user-select: none; }

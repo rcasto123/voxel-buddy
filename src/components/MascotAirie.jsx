@@ -21,13 +21,14 @@ const STATE_IMAGE = {
   sleep:    airieSleep,
 }
 
-export function MascotAirie({ state = 'idle', size = 120, className = '' }) {
+export function MascotAirie({ state = 'idle', size = 120, className = '', walking = false }) {
   const src = STATE_IMAGE[state] ?? airieActive
 
   return (
     // Wrapper carries the state class so CSS animations target .airie-img inside
+    // airie--walking overrides idle float with the hop cycle when wandering
     <div
-      className={`airie--${state} ${className}`}
+      className={`airie--${state}${walking ? ' airie--walking' : ''} ${className}`}
       style={{ width: size, height: size, position: 'relative' }}
       aria-label={`Airie is ${state}`}
     >

@@ -69,9 +69,9 @@ describe('setMascotState', () => {
 })
 
 describe('settings', () => {
-  it('default mascotCharacter is buddy', () => {
+  it('default mascotCharacter is airie', () => {
     const { getState } = useStore
-    expect(getState().settings.mascotCharacter).toBe('buddy')
+    expect(getState().settings.mascotCharacter).toBe('airie')
   })
 })
 

@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+release/
+
+# Electron dev artifacts
+out/
+
+# Environment / secrets — never commit tokens
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+*.dmg
+
+# Windows
+*.exe
+*.msi
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# Test coverage
+coverage/
+
+# Local reference images / video (large files, not source code)
+*.mp4
+"Airie 3.png"
+"Airie Pet.png"
+Gemini_Generated_Image_*.png
+
+# User settings — generated at runtime, not source
+~/.voxelbuddy/

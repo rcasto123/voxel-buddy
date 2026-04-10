@@ -62,5 +62,15 @@
 .bubble-enter { animation: slideUp 0.25s ease-out; }
 .bubble-exit  { animation: fadeOut 0.25s ease-in forwards; }
 
+/* ── Airie wing states ────────────────────────────────── */
+.airie--wings-up .airie-wing-left {
+  transform: rotate(-35deg);
+  transform-origin: 38px 70px;
+}
+.airie--wings-up .airie-wing-right {
+  transform: rotate(35deg);
+  transform-origin: 82px 70px;
+}
+
 /* ── Desktop Pet click-through helper ─────────────────── */
 body { user-select: none; }

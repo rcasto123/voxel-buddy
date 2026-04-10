@@ -68,6 +68,13 @@ describe('setMascotState', () => {
   })
 })
 
+describe('settings', () => {
+  it('default mascotCharacter is buddy', () => {
+    const { getState } = useStore
+    expect(getState().settings.mascotCharacter).toBe('buddy')
+  })
+})
+
 describe('unreadCount', () => {
   it('counts all notifications as unread', () => {
     act(() => {

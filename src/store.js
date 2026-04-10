@@ -11,6 +11,7 @@ export const useStore = create((set, get) => ({
   settings: {
     mascotName: 'Buddy',
     layout: 'desktop-pet',
+    mascotCharacter: 'buddy',  // 'buddy' | 'airie'
   },
 
   addNotification: (notification) =>

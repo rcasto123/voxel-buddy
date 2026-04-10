@@ -1,6 +1,6 @@
 // src/layouts/DesktopPet.jsx
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Mascot } from '../components/Mascot.jsx'
+import { MascotRenderer } from '../components/MascotRenderer.jsx'
 import { SpeechBubble } from '../components/SpeechBubble.jsx'
 import { useStore } from '../store.js'
 
@@ -191,7 +191,7 @@ export function DesktopPet() {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <Mascot state={mascotState} size={MASCOT_SIZE} />
+        <MascotRenderer state={mascotState} size={MASCOT_SIZE} />
       </div>
     </div>
   )

@@ -62,15 +62,14 @@
 .bubble-enter { animation: slideUp 0.25s ease-out; }
 .bubble-exit  { animation: fadeOut 0.25s ease-in forwards; }
 
-/* ── Airie wing states ────────────────────────────────── */
-.airie--wings-up .airie-wing-left {
-  transform: rotate(-35deg);
-  transform-origin: 42px 72px;
-}
-.airie--wings-up .airie-wing-right {
-  transform: rotate(35deg);
-  transform-origin: 78px 72px;
-}
+/* ── Airie image-based mascot animations ─────────────── */
+/* Applied to the <img> child inside the state wrapper div */
+.airie--idle    .airie-img { animation: breathe   3s   ease-in-out infinite; transform-origin: center bottom; }
+.airie--sleep   .airie-img { animation: breathe   6s   ease-in-out infinite; transform-origin: center bottom; opacity: 0.85; }
+.airie--alert   .airie-img { animation: bounceSoft 0.4s ease-in-out 2;       transform-origin: center bottom; }
+.airie--wave    .airie-img { animation: breathe   2s   ease-in-out infinite; transform-origin: center bottom; }
+.airie--thinking .airie-img { animation: breathe  2.5s ease-in-out infinite; transform-origin: center bottom; }
+.airie--happy   .airie-img { animation: bounceSoft 0.35s ease-in-out 3;     transform-origin: center bottom; }
 
 /* ── Desktop Pet click-through helper ─────────────────── */
 body { user-select: none; }

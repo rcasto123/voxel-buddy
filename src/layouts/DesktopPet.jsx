@@ -8,6 +8,13 @@ const MASCOT_SIZE = 100
 const WALK_SPEED = 40   // px/s
 const IDLE_AFTER = 20   // seconds of no notifications before sleep
 
+function rand(a, b) { return a + Math.random() * (b - a) }
+
+const VISUAL_STATE = {
+  idle: 'idle', walk: 'idle', alert: 'alert',
+  wave: 'wave', sleep: 'sleep', happy: 'happy', thinking: 'thinking',
+}
+
 export function DesktopPet() {
   const { notifications, mascotState, setMascotState, clearNotification } = useStore()
 
@@ -22,13 +29,10 @@ export function DesktopPet() {
   const idleAccumRef = useRef(0)
   const stateTimerRef = useRef(0)
   const stateDurationRef = useRef(rand(3, 6))
+  // Mutable ref queue: deliberately mutated inside the rAF loop to avoid
+  // React re-render synchronization overhead in the game loop.
   const notificationQueueRef = useRef([])
   const rafRef = useRef(null)
-
-  function rand(a, b) { return a + Math.random() * (b - a) }
-
-  // Map internal locomotion states to mascot visual states
-  const VISUAL_STATE = { idle: 'idle', walk: 'idle', alert: 'alert', wave: 'wave', sleep: 'sleep', happy: 'happy', thinking: 'thinking' }
 
   const setState = useCallback((s, duration) => {
     stateRef.current = s

@@ -1,5 +1,5 @@
 // src/components/SpeechBubble.jsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 /**
  * Props:
@@ -13,17 +13,20 @@ export function SpeechBubble({ notification, onDismiss, onReply, autoDismissMs =
   const [sent, setSent] = useState(false)
   const [exiting, setExiting] = useState(false)
 
-  // Auto-dismiss timer
-  useEffect(() => {
-    if (!autoDismissMs) return
-    const timer = setTimeout(() => dismiss(), autoDismissMs)
-    return () => clearTimeout(timer)
-  }, [autoDismissMs])
-
   function dismiss() {
     setExiting(true)
-    setTimeout(onDismiss, 250) // wait for fade-out animation
+    setTimeout(onDismiss, 250)
   }
+
+  // Auto-dismiss timer — include dismiss in deps via useCallback to avoid stale closure
+  const dismissRef = useRef(dismiss)
+  useEffect(() => { dismissRef.current = dismiss })
+
+  useEffect(() => {
+    if (!autoDismissMs) return
+    const timer = setTimeout(() => dismissRef.current(), autoDismissMs)
+    return () => clearTimeout(timer)
+  }, [autoDismissMs])
 
   function handleSend() {
     if (!replyText.trim()) return

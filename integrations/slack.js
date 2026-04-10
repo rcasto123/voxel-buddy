@@ -53,6 +53,7 @@ function createSlackAdapter({ appToken, botToken }) {
 
       client.on('app_mention', async ({ event, ack }) => {
         await ack()
+        if (!event) return
 
         const id = uuidv4()
         const notification = {
@@ -81,7 +82,14 @@ function createSlackAdapter({ appToken, botToken }) {
     },
 
     async stop() {
-      if (client) await client.disconnect()
+      replyHandlers.clear()
+      if (client) {
+        try {
+          await client.disconnect()
+        } catch (e) {
+          console.warn('[Slack] Error on disconnect:', e.message)
+        }
+      }
     },
   }
 }

@@ -10,6 +10,9 @@ export const useStore = create((set, get) => ({
   notifications: [],
   mascotState: 'idle',
   layoutMode: 'desktop-pet',
+  isMuted: false,
+  isFirstRun: false,
+
   settings: {
     mascotName: 'Buddy',
     layout: 'desktop-pet',
@@ -33,12 +36,16 @@ export const useStore = create((set, get) => ({
 
   setLayoutMode: (mode) => set({ layoutMode: mode }),
 
+  setMuted: (muted) => set({ isMuted: muted }),
+
+  setFirstRun: (v) => set({ isFirstRun: v }),
+
   updateSettings: (partial) =>
     set((state) => ({
       settings: { ...state.settings, ...partial },
     })),
 
-  // Derived count — call as getState().unreadCount() or useStore(s => s.notifications.length)
-  // in components for reactive subscriptions.
+  // Derived count — use useStore(s => s.notifications.length) in components
+  // for reactive subscriptions, or getState().unreadCount() imperatively.
   unreadCount: () => get().notifications.length,
 }))

@@ -2,6 +2,7 @@
 import { useEffect, Component } from 'react'
 import { useStore } from './store.js'
 import { DesktopPet } from './layouts/DesktopPet.jsx'
+import { SettingsPanel } from './layouts/SettingsPanel.jsx'
 
 // Future layouts imported here in later phases
 const LAYOUTS = {
@@ -61,10 +62,13 @@ class ErrorBoundary extends Component {
 }
 
 export function App() {
-  const { layoutMode, addNotification } = useStore()
+  const { layoutMode, addNotification, setMuted, setFirstRun, updateSettings } = useStore()
+
+  // Hash-based routing — settings panel runs in a separate BrowserWindow
+  // loaded at http://localhost:5173/#/settings (dev) or index.html#/settings (prod)
+  const isSettings = window.location.hash === '#/settings'
 
   // Listen for notifications from Electron main process
-  // window.buddy.onNotification returns a cleanup function to prevent listener leaks
   useEffect(() => {
     if (!window.buddy) return
     const cleanup = window.buddy.onNotification((notification) => {
@@ -72,6 +76,37 @@ export function App() {
     })
     return cleanup
   }, [addNotification])
+
+  // Listen for tray-driven mute toggles
+  useEffect(() => {
+    if (!window.buddy) return
+    const cleanup = window.buddy.onMuteChanged((muted) => setMuted(muted))
+    return cleanup
+  }, [setMuted])
+
+  // On mount: load settings to detect first-run and sync store state
+  useEffect(() => {
+    if (!window.buddy || isSettings) return
+    window.buddy.getSettings().then((s) => {
+      const hasTokens = Boolean(
+        s?.integrations?.slack?.appToken && s?.integrations?.slack?.botToken
+      )
+      setFirstRun(!hasTokens)
+      setMuted(s?.muted ?? false)
+      updateSettings({
+        mascotName: s?.mascotName ?? 'Buddy',
+        mascotCharacter: s?.mascotCharacter ?? 'airie',
+      })
+    })
+  }, [isSettings, setFirstRun, setMuted, updateSettings])
+
+  if (isSettings) {
+    return (
+      <ErrorBoundary>
+        <SettingsPanel />
+      </ErrorBoundary>
+    )
+  }
 
   const Layout = LAYOUTS[layoutMode] ?? DesktopPet
 

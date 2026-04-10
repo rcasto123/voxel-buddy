@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { MascotRenderer } from '../components/MascotRenderer.jsx'
 import { SpeechBubble } from '../components/SpeechBubble.jsx'
+import { OnboardingCard } from '../components/OnboardingCard.jsx'
 import { useStore } from '../store.js'
 
 const MASCOT_SIZE = 100
@@ -24,7 +25,7 @@ const VISUAL_STATE = {
 }
 
 export function DesktopPet() {
-  const { notifications, mascotState, setMascotState, clearNotification } = useStore()
+  const { notifications, mascotState, setMascotState, clearNotification, isFirstRun, setFirstRun } = useStore()
 
   const [posX, setPosX] = useState(window.innerWidth / 2)
   const [facing, setFacing] = useState(1) // 1 = right, -1 = left
@@ -88,11 +89,15 @@ export function DesktopPet() {
       const current = stateRef.current
       const queue = notificationQueueRef.current
 
-      // Notification arrives → alert (unless already alerting/waving)
+      // Notification arrives → alert (unless muted, already alerting, or waving)
       if (queue.length > 0 && current !== 'alert' && current !== 'wave') {
         const next = queue.shift()
-        setState('alert', 2.5)
-        setActiveBubble(next)
+        // Read mute state directly from Zustand without causing re-renders
+        if (!useStore.getState().isMuted) {
+          setState('alert', 2.5)
+          setActiveBubble(next)
+        }
+        // If muted: discard silently; mascot keeps animating normally
         rafRef.current = requestAnimationFrame(loop)
         return
       }
@@ -166,7 +171,6 @@ export function DesktopPet() {
   function handleDismissBubble() {
     if (activeBubble) {
       clearNotification(activeBubble.id)
-      // Tell main to clean up the reply handler for this notification
       window.buddy?.dismissNotification(activeBubble.id)
     }
     setActiveBubble(null)
@@ -179,6 +183,8 @@ export function DesktopPet() {
   const mascotBottom = 24 // px from bottom of screen
   const mascotLeft = posX - MASCOT_SIZE / 2
   const bubbleBottom = mascotBottom + MASCOT_SIZE + 12
+  const bubbleLeft = Math.max(8, Math.min(windowWidth - 296, posX - 144))
+  const onboardingLeft = Math.max(8, Math.min(windowWidth - 328, posX - 160))
 
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden">
@@ -187,10 +193,7 @@ export function DesktopPet() {
         {activeBubble && (
           <div
             className="absolute pointer-events-auto"
-            style={{
-              bottom: bubbleBottom,
-              left: Math.max(8, Math.min(windowWidth - 296, posX - 144)),
-            }}
+            style={{ bottom: bubbleBottom, left: bubbleLeft }}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
           >
@@ -202,6 +205,18 @@ export function DesktopPet() {
           </div>
         )}
       </div>
+
+      {/* Onboarding card — shown when no Slack tokens are configured, no active bubble */}
+      {isFirstRun && !activeBubble && (
+        <div
+          className="absolute"
+          style={{ bottom: bubbleBottom, left: onboardingLeft }}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          <OnboardingCard onDismiss={() => setFirstRun(false)} />
+        </div>
+      )}
 
       {/* Mascot */}
       <div

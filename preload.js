@@ -2,15 +2,17 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('buddy', {
-  // Receive a new notification from main process
+  // Receive a new notification from main process.
+  // Returns a cleanup function — call it in useEffect cleanup to avoid listener leaks.
   onNotification: (callback) => {
-    ipcRenderer.on('buddy:notification', (_event, notification) => callback(notification))
+    const handler = (_event, notification) => callback(notification)
+    ipcRenderer.on('buddy:notification', handler)
+    return () => ipcRenderer.removeListener('buddy:notification', handler)
   },
 
   // Send a reply back to its source (Slack, etc.)
-  sendReply: (notificationId, text) => {
-    ipcRenderer.invoke('buddy:send-reply', { notificationId, text })
-  },
+  sendReply: (notificationId, text) =>
+    ipcRenderer.invoke('buddy:send-reply', { notificationId, text }),
 
   // Notify main process that mouse entered/left mascot hitbox (for click-through)
   setMouseOverMascot: (isOver) => {

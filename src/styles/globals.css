@@ -175,7 +175,12 @@
 .airie--walk .airie-img,
 .airie--alert .airie-img,
 .airie--wave .airie-img,
-.airie--happy .airie-img {
+.airie--happy .airie-img,
+.airie--meditate .airie-img,
+.airie--love .airie-img,
+.airie--determined .airie-img,
+.airie--surprised .airie-img,
+.airie--confused .airie-img {
   will-change: transform, filter;
 }
 
@@ -186,30 +191,37 @@
   filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28));
 }
 
-/* WALK — hop cycle + wing-flap shimmer, applied to BOTH stacked frames */
+/* WALK — 4-frame locomotion cycle extracted from the sprite sheet.
+   Each of 4 stacked <img> frames is visible for 25% of the 520ms loop.
+   airieCycle4 holds opacity:1 for the first quarter, 0 for the rest; each
+   frame staggers its animation-delay by -130ms so they round-robin.
+   Result: real leg-swap locomotion, not a bouncing sprite.
+   Hop + shadow pulse retained for vertical motion and ground contact. */
+@keyframes airieCycle4 {
+  0%, 24.99% { opacity: 1; }
+  25%, 100%  { opacity: 0; }
+}
 .airie--walk .airie-img {
   animation: airieHop       0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite,
-             airieWingFlap  0.52s ease-in-out infinite;
+             airieCycle4    0.52s steps(1, end) infinite;
 }
+.airie--walk .airie-frame-0 { animation-delay: 0s,       0s; }
+.airie--walk .airie-frame-1 { animation-delay: 0s,  -0.13s; opacity: 0; }
+.airie--walk .airie-frame-2 { animation-delay: 0s,  -0.26s; opacity: 0; }
+.airie--walk .airie-frame-3 { animation-delay: 0s,  -0.39s; opacity: 0; }
 
-/* Two-frame walk cycle: frame-a (active pose) and frame-b (mid-stride pose)
-   alternate visibility every 260ms. Frame B is offset by -260ms so they
-   swap on the beat of the hop — visible leg swing + foot-down on each step. */
-@keyframes airieFrameSwap {
-  0%, 49.99% { opacity: 1; }
-  50%, 100%  { opacity: 0; }
+/* IDLE hover cycle — 4-frame flying loop at a much calmer tempo (1.6s).
+   Paired with the existing airieFloat rule on .airie--idle .airie-img.
+   Uses the SAME airieCycle4 keyframe at different duration. */
+.airie--idle .airie-img.airie-hover {
+  animation: airieFloat     3.8s ease-in-out infinite,
+             airieIdleBlink 7s   ease-in-out infinite,
+             airieCycle4    1.6s steps(1, end) infinite;
 }
-.airie--walk .airie-frame-a {
-  animation: airieHop         0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite,
-             airieWingFlap    0.52s ease-in-out infinite,
-             airieFrameSwap   0.52s linear infinite;
-}
-.airie--walk .airie-frame-b {
-  opacity: 0;
-  animation: airieHop         0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite,
-             airieWingFlap    0.52s ease-in-out infinite,
-             airieFrameSwap   0.52s linear -0.26s infinite;
-}
+.airie--idle .airie-frame-0 { animation-delay: 0s, 0s,      0s; }
+.airie--idle .airie-frame-1 { animation-delay: 0s, 0s,  -0.4s; opacity: 0; }
+.airie--idle .airie-frame-2 { animation-delay: 0s, 0s,  -0.8s; opacity: 0; }
+.airie--idle .airie-frame-3 { animation-delay: 0s, 0s,  -1.2s; opacity: 0; }
 
 /* ALERT — squash-stretch bounce + bright glow */
 .airie--alert .airie-img {
@@ -240,6 +252,37 @@
 .airie--happy .airie-img {
   animation: airieHappyWiggle 0.68s ease-in-out 2;
   filter: drop-shadow(0 8px 32px rgba(96, 210, 196, 0.88));
+}
+
+/* MEDITATE — very slow breathing float, aqua aura.
+   She's sitting cross-legged on a cloud — keep movement subtle and centered. */
+.airie--meditate .airie-img {
+  animation: airieSleepBreathe 6.5s ease-in-out infinite;
+  filter: drop-shadow(0 6px 20px rgba(120, 220, 200, 0.45));
+}
+
+/* LOVE — heart-hug bounce + warm pink glow */
+.airie--love .airie-img {
+  animation: airieHappyWiggle 1.4s ease-in-out infinite;
+  filter: drop-shadow(0 6px 22px rgba(255, 160, 180, 0.55));
+}
+
+/* DETERMINED — firm upward push, crisp glow */
+.airie--determined .airie-img {
+  animation: airieFloat 2.2s ease-in-out infinite;
+  filter: drop-shadow(0 6px 18px rgba(96, 210, 196, 0.55));
+}
+
+/* SURPRISED — sharp vertical jolt, bright flash */
+.airie--surprised .airie-img {
+  animation: airieAlertBounce 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97) 3;
+  filter: drop-shadow(0 8px 28px rgba(255, 225, 140, 0.7));
+}
+
+/* CONFUSED — lazy pendulum sway, muted tint */
+.airie--confused .airie-img {
+  animation: airieThinkSway 3.5s ease-in-out infinite;
+  filter: drop-shadow(0 5px 14px rgba(180, 180, 220, 0.35));
 }
 
 /* ── Ground shadow ─────────────────────────────────────

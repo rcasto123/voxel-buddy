@@ -1,7 +1,15 @@
 // src/store.js
 import { create } from 'zustand'
 
-const VALID_STATES = new Set(['idle', 'walk', 'alert', 'wave', 'sleep', 'thinking', 'happy'])
+const VALID_STATES = new Set([
+  'idle', 'walk', 'alert', 'wave', 'sleep', 'thinking', 'happy',
+  // Extended behaviors from the Airie sprite sheet (Section 2):
+  'meditate',   // zen / DND mode
+  'love',       // Easter egg (double-click / affection)
+  'confused',   // error / unknown state
+  'determined', // actively working / AI generating
+  'surprised',  // high-priority ping
+])
 const MAX_NOTIFICATIONS = 50
 
 export const useStore = create((set, get) => ({

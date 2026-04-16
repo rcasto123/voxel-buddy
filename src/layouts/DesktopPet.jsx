@@ -26,7 +26,15 @@ function easedSpeedFactor(t) {
 const VISUAL_STATE = {
   idle: 'idle', walk: 'walk', alert: 'alert',
   wave: 'wave', sleep: 'sleep', happy: 'happy', thinking: 'thinking',
+  // Extended behaviors from the sprite sheet
+  meditate: 'meditate', love: 'love', confused: 'confused',
+  determined: 'determined', surprised: 'surprised',
 }
+
+// Before falling fully asleep, sometimes meditate for a while — lends Airie
+// a bit of personality and reads as "chilling" rather than "ignored".
+const MEDITATE_CHANCE = 0.35
+const MEDITATE_DURATION = [6, 12]  // seconds
 
 export function DesktopPet() {
   const {
@@ -44,6 +52,15 @@ export function DesktopPet() {
     const onResize = () => setWindowWidth(window.innerWidth)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // Hello on launch — Airie waves hi the first time DesktopPet mounts.
+  // Runs once; the rAF loop takes over afterward.
+  useEffect(() => {
+    const t = setTimeout(() => setMascotState('wave'), 400)
+    const t2 = setTimeout(() => setMascotState('idle'), 2400)
+    return () => { clearTimeout(t); clearTimeout(t2) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const stateRef = useRef('idle')
@@ -114,8 +131,14 @@ export function DesktopPet() {
         }
       } else if (current === 'idle') {
         if (idleAccumRef.current >= IDLE_AFTER) {
-          setState('sleep')
-          return scheduleSleepPoll() // switch to low-power poll
+          // 35% of the time: meditate first (zen float) before napping.
+          // Keeps Airie visually alive during long idle stretches.
+          if (Math.random() < MEDITATE_CHANCE) {
+            setState('meditate', rand(...MEDITATE_DURATION))
+          } else {
+            setState('sleep')
+            return scheduleSleepPoll()
+          }
         } else if (stateTimerRef.current >= stateDurationRef.current) {
           // Wander personality:
           //   60% — walk off in a random direction for 2-5s
@@ -153,6 +176,15 @@ export function DesktopPet() {
         }
       } else if (current === 'happy') {
         if (stateTimerRef.current >= stateDurationRef.current) setState('idle')
+      } else if (current === 'meditate') {
+        // Meditation is interruptible by notifications (handled at top of tick).
+        // Otherwise hold the pose for the full duration, then go to sleep.
+        if (stateTimerRef.current >= stateDurationRef.current) {
+          setState('sleep')
+          return scheduleSleepPoll()
+        }
+      } else if (current === 'love') {
+        if (stateTimerRef.current >= stateDurationRef.current) setState('happy', 1.2)
       } else if (current === 'thinking') {
         // Thinking is controlled externally (during reply send) — no auto-transition
       } else if (current === 'sleep') {
@@ -188,9 +220,21 @@ export function DesktopPet() {
     }
   }, [setState, showBubble])
 
+  // Double-click timer for the love Easter egg
+  const lastClickRef = useRef(0)
+
   function handleMascotClick() {
     if (stateRef.current === 'alert' || stateRef.current === 'wave') return
     idleAccumRef.current = 0
+
+    const now = performance.now()
+    const delta = now - lastClickRef.current
+    lastClickRef.current = now
+    if (delta < 400) {
+      // Double-click within 400ms → Airie shows affection
+      setState('love', 2.6)
+      return
+    }
     setState('wave', 2)
   }
 

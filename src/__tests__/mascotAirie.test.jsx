@@ -39,11 +39,28 @@ describe('MascotAirie', () => {
     expect(wrapper.classList.contains('airie--wings-up')).toBe(false)
   })
 
-  it('uses alert image for both alert and wave states', () => {
+  it('uses distinct sprites for alert (notify bell) and wave (hand up)', () => {
+    // Post-spritesheet update: these used to share one asset; now each has
+    // its own dedicated pose extracted from the sprite sheet.
     const { container: c1 } = render(<MascotAirie state="alert" />)
     const { container: c2 } = render(<MascotAirie state="wave" />)
     const src1 = c1.querySelector('img').src
     const src2 = c2.querySelector('img').src
-    expect(src1).toBe(src2)
+    expect(src1).not.toBe(src2)
+  })
+
+  it('renders 4 stacked frames for the walk locomotion cycle', () => {
+    const { container } = render(<MascotAirie state="walk" />)
+    const imgs = container.querySelectorAll('img')
+    expect(imgs.length).toBe(4)
+    // Each frame should carry its own .airie-frame-N class
+    expect(container.querySelector('.airie-frame-0')).toBeTruthy()
+    expect(container.querySelector('.airie-frame-3')).toBeTruthy()
+  })
+
+  it('renders 4 stacked frames for the idle hover cycle', () => {
+    const { container } = render(<MascotAirie state="idle" />)
+    const imgs = container.querySelectorAll('img')
+    expect(imgs.length).toBe(4)
   })
 })

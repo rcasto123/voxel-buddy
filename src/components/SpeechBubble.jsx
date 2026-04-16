@@ -117,18 +117,20 @@ export function SpeechBubble({
           aria-label="Dismiss">×</button>
       </div>
 
-      {/* AI suggestion chips */}
+      {/* AI suggestion chips — stagger in after the bubble pops */}
       {sendState === 'idle' && !chipsHidden && suggestions.length > 0 && (
-        <div className="border-t border-buddy-border pt-2 flex flex-col gap-1.5 animate-fade-in">
-          <p className="text-[10px] text-buddy-muted/60 uppercase tracking-wider">✨ suggestions</p>
+        <div className="border-t border-buddy-border pt-2 flex flex-col gap-1.5">
+          <p className="text-[10px] text-buddy-muted/60 uppercase tracking-wider chip-in"
+             style={{ animationDelay: '0.15s' }}>✨ suggestions</p>
           <div className="flex flex-wrap gap-1.5">
             {suggestions.map((s, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => handleChipClick(s)}
-                className="bg-white/10 hover:bg-white/20 text-white/80 text-xs px-2 py-1
-                  rounded-full border border-white/10 cursor-pointer transition-colors"
+                className="bg-white/10 hover:bg-white/20 hover:-translate-y-0.5 text-white/80 text-xs px-2 py-1
+                  rounded-full border border-white/10 cursor-pointer transition-all chip-in"
+                style={{ animationDelay: `${0.22 + i * 0.06}s` }}
               >
                 {s}
               </button>
@@ -143,7 +145,12 @@ export function SpeechBubble({
           <p className="text-xs text-buddy-glow w-full text-center py-1">Sent ✓</p>
         )}
         {sendState === 'sending' && (
-          <p className="text-xs text-buddy-muted w-full text-center py-1 animate-pulse">Sending…</p>
+          <div className="w-full flex items-center justify-center gap-1 py-1 text-xs text-buddy-muted">
+            <span>Sending</span>
+            <span className="typing-dot inline-block">•</span>
+            <span className="typing-dot inline-block" style={{ animationDelay: '0.15s' }}>•</span>
+            <span className="typing-dot inline-block" style={{ animationDelay: '0.3s' }}>•</span>
+          </div>
         )}
         {sendState === 'error' && (
           <div className="flex-1 flex flex-col gap-1.5">

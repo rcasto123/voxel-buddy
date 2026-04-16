@@ -45,6 +45,9 @@ contextBridge.exposeInMainWorld('buddy', {
   openSettingsWindow: () => ipcRenderer.send('buddy:open-settings-window'),
   restartIntegrations: () => ipcRenderer.invoke('buddy:restart-integrations'),
 
+  // ── App lifecycle ─────────────────────────────────────────────
+  quit: () => ipcRenderer.send('buddy:quit'),
+
   // ── Auto-start ────────────────────────────────────────────────
   setLoginItem: (enabled) => ipcRenderer.invoke('buddy:set-login-item', enabled),
   getLoginItem: () => ipcRenderer.invoke('buddy:get-login-item'),

@@ -13,8 +13,8 @@ describe('MascotAirie', () => {
     expect(wrapper.classList.contains('airie--idle')).toBe(true)
   })
 
-  it('renders an img child', () => {
-    const { container } = render(<MascotAirie state="idle" />)
+  it('renders an image surface for single-frame states', () => {
+    const { container } = render(<MascotAirie state="happy" />)
     const img = container.querySelector('img')
     expect(img).toBeTruthy()
   })
@@ -49,17 +49,13 @@ describe('MascotAirie', () => {
     expect(src1).not.toBe(src2)
   })
 
-  it('renders 2 stacked frames for the walk locomotion cycle', () => {
+  it('renders a sprite-strip div for walk state', () => {
     const { container } = render(<MascotAirie state="walk" />)
-    const imgs = container.querySelectorAll('img')
-    expect(imgs.length).toBe(2)
-    expect(container.querySelector('.airie-frame-0')).toBeTruthy()
-    expect(container.querySelector('.airie-frame-1')).toBeTruthy()
+    expect(container.querySelector('.airie-strip-walk')).toBeTruthy()
   })
 
-  it('renders 2 stacked frames for the idle hover cycle', () => {
+  it('renders a sprite-strip div for idle state', () => {
     const { container } = render(<MascotAirie state="idle" />)
-    const imgs = container.querySelectorAll('img')
-    expect(imgs.length).toBe(2)
+    expect(container.querySelector('.airie-strip-idle')).toBeTruthy()
   })
 })

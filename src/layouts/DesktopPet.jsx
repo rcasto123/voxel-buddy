@@ -36,10 +36,16 @@ const VISUAL_STATE = {
 const MEDITATE_CHANCE = 0.35
 const MEDITATE_DURATION = [6, 12]  // seconds
 
+// Pixels of mouse travel before a mousedown turns into a drag (vs. a click).
+// Below the threshold we treat the release as a click (wave / love Easter egg);
+// above it, we suppress the click and keep dragging.
+const DRAG_THRESHOLD = 4
+
 export function DesktopPet() {
   const {
     notifications, mascotState, setMascotState,
     clearNotification, isFirstRun, setFirstRun,
+    isMuted, addNotification,
   } = useStore()
 
   const [posX, setPosX] = useState(window.innerWidth / 2)
@@ -47,6 +53,8 @@ export function DesktopPet() {
   const [activeBubble, setActiveBubble] = useState(null)
   const [suggestions, setSuggestions] = useState([])
   const [windowWidth, setWindowWidth] = useState(window.innerWidth)
+  const [contextMenu, setContextMenu] = useState(null) // { x, y } in viewport px
+  const [isDragging, setIsDragging] = useState(false)
 
   useEffect(() => {
     const onResize = () => setWindowWidth(window.innerWidth)
@@ -226,7 +234,70 @@ export function DesktopPet() {
   // Double-click timer for the love Easter egg
   const lastClickRef = useRef(0)
 
+  // ── Drag state ─────────────────────────────────────────
+  // dragging: mousedown seen; moved: threshold exceeded → true drag in progress.
+  // We only flip isDragging (state) once `moved` crosses the threshold so the
+  // click-consumed-by-drag guard in handleMascotClick stays consistent even
+  // for tiny jitters.
+  const dragRef = useRef({ dragging: false, moved: false, startX: 0, startMouseX: 0, consumedClick: false })
+
+  useEffect(() => {
+    function onMove(e) {
+      const d = dragRef.current
+      if (!d.dragging) return
+      const dx = e.clientX - d.startMouseX
+      if (!d.moved && Math.abs(dx) >= DRAG_THRESHOLD) {
+        d.moved = true
+        setIsDragging(true)
+        // Stop the rAF state machine from fighting us — pin to idle visually.
+        if (stateRef.current === 'walk') setState('idle')
+      }
+      if (!d.moved) return
+      const maxX = window.innerWidth - MASCOT_SIZE / 2 - 4
+      const minX = MASCOT_SIZE / 2 + 4
+      const newX = Math.max(minX, Math.min(maxX, d.startX + dx))
+      posXRef.current = newX
+      setPosX(newX)
+      // Reset idle accum so she doesn't immediately snooze after being moved
+      idleAccumRef.current = 0
+    }
+    function onUp() {
+      const d = dragRef.current
+      if (!d.dragging) return
+      d.dragging = false
+      if (d.moved) {
+        d.consumedClick = true
+        setIsDragging(false)
+        // Little happy wiggle after being placed — feels responsive.
+        setState('happy', 1.2)
+      }
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [setState])
+
+  function handleMouseDown(e) {
+    if (e.button !== 0) return // left only
+    dragRef.current = {
+      dragging: true, moved: false,
+      startX: posXRef.current, startMouseX: e.clientX,
+      consumedClick: false,
+    }
+    // Dismiss any open menu
+    if (contextMenu) setContextMenu(null)
+    e.preventDefault()
+  }
+
   function handleMascotClick() {
+    // Swallow the click that terminated a drag
+    if (dragRef.current.consumedClick) {
+      dragRef.current.consumedClick = false
+      return
+    }
     if (stateRef.current === 'alert' || stateRef.current === 'wave') return
     idleAccumRef.current = 0
 
@@ -239,6 +310,58 @@ export function DesktopPet() {
       return
     }
     setState('wave', 2)
+  }
+
+  // ── Right-click context menu ───────────────────────────
+  function handleContextMenu(e) {
+    e.preventDefault()
+    // Clamp so the menu stays on screen (menu is ~200×260)
+    const menuW = 208
+    const menuH = 280
+    const x = Math.min(e.clientX, window.innerWidth - menuW - 8)
+    const y = Math.min(e.clientY, window.innerHeight - menuH - 8)
+    setContextMenu({ x, y })
+  }
+
+  // Global dismiss of the menu on outside click / Escape
+  useEffect(() => {
+    if (!contextMenu) return
+    function onDown() { setContextMenu(null) }
+    function onKey(e) { if (e.key === 'Escape') setContextMenu(null) }
+    // Defer so the click that opened the menu doesn't immediately close it
+    const t = setTimeout(() => {
+      window.addEventListener('mousedown', onDown)
+      window.addEventListener('keydown', onKey)
+    }, 0)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [contextMenu])
+
+  function handleMenuAction(action) {
+    setContextMenu(null)
+    switch (action) {
+      case 'wave':     setState('wave', 2); break
+      case 'meditate': setState('meditate', 10); break
+      case 'sleep':    setState('sleep'); break
+      case 'test':
+        addNotification({
+          id: `demo-${Date.now()}`,
+          source: 'slack', type: 'dm',
+          sender: { name: 'Airie' },
+          text: 'Hey! This is what a notification from me looks like. Pretty cute, right?',
+        })
+        break
+      case 'mute':
+        useStore.getState().setMuted(!isMuted)
+        window.buddy?.setMuted(!isMuted)
+        break
+      case 'settings': window.buddy?.openSettingsWindow(); break
+      case 'quit':     window.buddy?.quit(); break
+      default: break
+    }
   }
 
   function handleMouseEnter() { window.buddy?.setMouseOverMascot(true) }
@@ -301,17 +424,67 @@ export function DesktopPet() {
         </div>
       )}
 
-      <div className={`absolute pointer-events-auto cursor-pointer ${justMounted ? 'airie-entering' : ''}`}
+      <div
+        className={`absolute pointer-events-auto ${justMounted ? 'airie-entering' : ''} ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
         style={{
           bottom: mascotBottom, left: mascotLeft,
           transform: facing < 0 ? 'scaleX(-1)' : 'scaleX(1)',
           // Bouncier 0.28s pivot — reads as a deliberate turn, not a snap
           transition: 'transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
         }}
+        onMouseDown={handleMouseDown}
         onClick={handleMascotClick}
+        onContextMenu={handleContextMenu}
         onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
         <MascotRenderer state={mascotState} size={MASCOT_SIZE} />
       </div>
+
+      {contextMenu && (
+        <div
+          className="absolute pointer-events-auto buddy-menu animate-fade-in"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+          onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}
+          role="menu"
+        >
+          <MenuItem icon="👋" label="Say hi"            onClick={() => handleMenuAction('wave')} />
+          <MenuItem icon="🧘" label="Meditate"          onClick={() => handleMenuAction('meditate')} />
+          <MenuItem icon="💤" label="Take a nap"        onClick={() => handleMenuAction('sleep')} />
+          <MenuDivider />
+          <MenuItem icon="🔔" label="Test notification" onClick={() => handleMenuAction('test')} />
+          <MenuItem
+            icon={isMuted ? '🔇' : '🔊'}
+            label={isMuted ? 'Unmute' : 'Mute'}
+            onClick={() => handleMenuAction('mute')}
+          />
+          <MenuDivider />
+          <MenuItem icon="⚙️" label="Settings…"         onClick={() => handleMenuAction('settings')} />
+          <MenuItem icon="⏻"  label="Quit Voxel Buddy"  onClick={() => handleMenuAction('quit')} danger />
+        </div>
+      )}
     </div>
   )
+}
+
+function MenuItem({ icon, label, onClick, danger }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={`
+        w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm text-left
+        transition-colors
+        ${danger ? 'text-red-300 hover:bg-red-500/15' : 'text-buddy-text hover:bg-white/8'}
+      `}
+    >
+      <span className="w-4 text-center text-[13px] leading-none">{icon}</span>
+      <span className="flex-1">{label}</span>
+    </button>
+  )
+}
+
+function MenuDivider() {
+  return <div className="my-1 h-px bg-buddy-border/70" />
 }

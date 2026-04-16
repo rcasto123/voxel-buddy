@@ -312,6 +312,9 @@ function registerIPC() {
 
   ipcMain.on('buddy:open-settings-window', openSettingsWindow)
 
+  // Quit from context menu. Triggered by user action — safe to call app.quit().
+  ipcMain.on('buddy:quit', () => app.quit())
+
   ipcMain.handle('buddy:restart-integrations', async () => {
     await stopAll()
     reset()

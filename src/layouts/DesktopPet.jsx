@@ -4,6 +4,8 @@ import { MascotRenderer } from '../components/MascotRenderer.jsx'
 import { SpeechBubble } from '../components/SpeechBubble.jsx'
 import { OnboardingCard } from '../components/OnboardingCard.jsx'
 import { useStore } from '../store.js'
+import { playNotify, playSuccess } from '../services/sound.js'
+import { suggestReplies } from '../services/aiSuggest.js'
 
 const MASCOT_SIZE = 100
 const WALK_SPEED = 40   // px/s
@@ -25,6 +27,7 @@ export function DesktopPet() {
   const [posX, setPosX] = useState(window.innerWidth / 2)
   const [facing, setFacing] = useState(1)
   const [activeBubble, setActiveBubble] = useState(null)
+  const [suggestions, setSuggestions] = useState([])
   const [windowWidth, setWindowWidth] = useState(window.innerWidth)
 
   useEffect(() => {
@@ -50,6 +53,22 @@ export function DesktopPet() {
     setMascotState(VISUAL_STATE[s] ?? 'idle')
     if (s === 'alert' || s === 'wave') idleAccumRef.current = 0
   }, [setMascotState])
+
+  // Show a notification bubble and kick off AI suggestions in the background
+  const showBubble = useCallback(async (notification) => {
+    setSuggestions([])
+    setActiveBubble(notification)
+    try {
+      const settings = await window.buddy?.getSettings() ?? {}
+      const apiKey = settings.integrations?.ai?.apiKey ?? ''
+      if (apiKey) {
+        const chips = await suggestReplies(notification, apiKey)
+        setSuggestions(chips)
+      }
+    } catch {
+      // suggestions are optional — never block
+    }
+  }, [])
 
   // Enqueue all unseen notifications — scan the full array to avoid race
   useEffect(() => {
@@ -79,8 +98,9 @@ export function DesktopPet() {
       if (queue.length > 0 && current !== 'alert' && current !== 'wave') {
         const next = queue.shift()
         if (!useStore.getState().isMuted) {
+          playNotify()
           setState('alert', 2.5)
-          setActiveBubble(next)
+          showBubble(next)
         }
       } else if (current === 'idle') {
         if (idleAccumRef.current >= IDLE_AFTER) {
@@ -102,7 +122,7 @@ export function DesktopPet() {
         if (stateTimerRef.current >= stateDurationRef.current) setState('wave', 2.5)
       } else if (current === 'wave') {
         if (stateTimerRef.current >= stateDurationRef.current) {
-          if (queue.length > 0) { setState('alert', 2.5); setActiveBubble(queue.shift()) }
+          if (queue.length > 0) { setState('alert', 2.5); showBubble(queue.shift()) }
           else setState('happy', 1.5)
         }
       } else if (current === 'happy') {
@@ -123,8 +143,9 @@ export function DesktopPet() {
         if (queue.length > 0) {
           const next = queue.shift()
           if (!useStore.getState().isMuted) {
+            playNotify()
             setState('alert', 2.5)
-            setActiveBubble(next)
+            showBubble(next)
           }
           lastTimeRef.current = performance.now()
           rafId = requestAnimationFrame(tick) // resume full loop
@@ -139,7 +160,7 @@ export function DesktopPet() {
       if (rafId) cancelAnimationFrame(rafId)
       if (sleepPollId) clearTimeout(sleepPollId)
     }
-  }, [setState])
+  }, [setState, showBubble])
 
   function handleMascotClick() {
     if (stateRef.current === 'alert' || stateRef.current === 'wave') return
@@ -156,6 +177,7 @@ export function DesktopPet() {
       window.buddy?.dismissNotification(activeBubble.id)
     }
     setActiveBubble(null)
+    setSuggestions([])
   }
 
   // async — awaits the IPC result so SpeechBubble can show success/failure
@@ -169,6 +191,7 @@ export function DesktopPet() {
   }
 
   function handleReplyDone() {
+    playSuccess()
     setState('happy', 1.5)
   }
 
@@ -191,6 +214,7 @@ export function DesktopPet() {
               onReply={handleReply}
               onReplySending={handleReplySending}
               onReplyDone={handleReplyDone}
+              suggestions={suggestions}
             />
           </div>
         )}

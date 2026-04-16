@@ -5,6 +5,7 @@ const fs = require('fs')
 const os = require('os')
 const { autoUpdater } = require('electron-updater')
 const { register, startAll, stopAll, reset } = require('./integrations/index.js')
+const { startOAuthServer } = require('./integrations/oauth-server.js')
 
 const isDev = process.env.NODE_ENV === 'development'
 const SETTINGS_PATH = path.join(os.homedir(), '.voxelbuddy', 'settings.json')
@@ -60,32 +61,50 @@ function loadSettings() {
 // Returns settings with tokens decrypted for consumption by the renderer
 function loadSettingsDecrypted() {
   const s = loadSettings()
-  if (!s.integrations?.slack) return s
-  return {
-    ...s,
-    integrations: {
-      ...s.integrations,
-      slack: {
-        appToken: decryptToken(s.integrations.slack.appToken),
-        botToken: decryptToken(s.integrations.slack.botToken),
-      },
-    },
+  const decrypted = { ...s, integrations: { ...s.integrations } }
+
+  if (decrypted.integrations?.slack) {
+    decrypted.integrations.slack = {
+      appToken: decryptToken(s.integrations.slack.appToken),
+      botToken: decryptToken(s.integrations.slack.botToken),
+    }
   }
+
+  if (decrypted.integrations?.gmail) {
+    decrypted.integrations.gmail = {
+      accessToken:  decryptToken(s.integrations.gmail.accessToken),
+      refreshToken: decryptToken(s.integrations.gmail.refreshToken),
+      clientId:     decryptToken(s.integrations.gmail.clientId),
+      clientSecret: decryptToken(s.integrations.gmail.clientSecret),
+      email:        s.integrations.gmail.email ?? null,
+    }
+  }
+
+  return decrypted
 }
 
 function saveSettings(settings) {
   try {
     // Encrypt tokens before writing to disk
-    const toWrite = { ...settings }
+    const toWrite = { ...settings, integrations: { ...settings.integrations } }
+
     if (toWrite.integrations?.slack) {
-      toWrite.integrations = {
-        ...toWrite.integrations,
-        slack: {
-          appToken: encryptToken(toWrite.integrations.slack.appToken),
-          botToken: encryptToken(toWrite.integrations.slack.botToken),
-        },
+      toWrite.integrations.slack = {
+        appToken: encryptToken(toWrite.integrations.slack.appToken),
+        botToken: encryptToken(toWrite.integrations.slack.botToken),
       }
     }
+
+    if (toWrite.integrations?.gmail) {
+      toWrite.integrations.gmail = {
+        accessToken:  encryptToken(toWrite.integrations.gmail.accessToken),
+        refreshToken: encryptToken(toWrite.integrations.gmail.refreshToken),
+        clientId:     encryptToken(toWrite.integrations.gmail.clientId),
+        clientSecret: encryptToken(toWrite.integrations.gmail.clientSecret),
+        email:        toWrite.integrations.gmail.email ?? null,
+      }
+    }
+
     fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true })
     fs.writeFileSync(SETTINGS_PATH, JSON.stringify(toWrite, null, 2))
     _cachedSettings = toWrite
@@ -96,6 +115,9 @@ function saveSettings(settings) {
 
 // ── Reply handler map ───────────────────────────────────────────
 const replyHandlers = new Map()
+
+// ── Gmail adapter (module-level so IPC handlers can reach it) ───
+let gmailAdapter = null
 
 // ── Windows ────────────────────────────────────────────────────
 let win = null
@@ -316,11 +338,144 @@ function registerIPC() {
       shell.openExternal(url)
     }
   })
+
+  // ── Gmail OAuth ─────────────────────────────────────────────────
+  ipcMain.handle('buddy:gmail-auth-start', async (_event, { clientId, clientSecret }) => {
+    try {
+      if (!clientId || !clientSecret) {
+        return { ok: false, error: 'Client ID and Client Secret are required.' }
+      }
+
+      const { google } = await import('googleapis')
+      const oauth2Client = new google.auth.OAuth2(
+        clientId,
+        clientSecret,
+        'http://localhost:42813/oauth/google/callback'
+      )
+
+      const authUrl = oauth2Client.generateAuthUrl({
+        access_type: 'offline',
+        prompt: 'consent', // force refresh_token to always be returned
+        scope: [
+          'https://www.googleapis.com/auth/gmail.readonly',
+          'https://www.googleapis.com/auth/gmail.modify',
+        ],
+      })
+
+      // Start the local server BEFORE opening the browser so we're ready
+      const codePromise = startOAuthServer()
+      shell.openExternal(authUrl)
+
+      const code = await codePromise
+
+      const { tokens } = await oauth2Client.getToken(code)
+      const { access_token, refresh_token } = tokens
+
+      if (!access_token || !refresh_token) {
+        return { ok: false, error: 'Did not receive tokens from Google.' }
+      }
+
+      // Resolve the user's email address
+      oauth2Client.setCredentials(tokens)
+      let email = null
+      try {
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
+        const profile = await gmail.users.getProfile({ userId: 'me' })
+        email = profile.data.emailAddress ?? null
+      } catch (e) {
+        console.warn('[Gmail] Could not fetch profile email:', e.message)
+      }
+
+      // Persist tokens (encrypted)
+      const s = loadSettings()
+      s.integrations = {
+        ...s.integrations,
+        gmail: {
+          accessToken:  access_token,
+          refreshToken: refresh_token,
+          clientId,
+          clientSecret,
+          email,
+        },
+      }
+      saveSettings(s)
+      _cachedSettings = null // bust cache so next load picks up the new values
+
+      // Start the Gmail adapter
+      await startGmailAdapter({ accessToken: access_token, refreshToken: refresh_token, clientId, clientSecret })
+
+      return { ok: true, email }
+    } catch (e) {
+      console.error('[Gmail] Auth failed:', e.message)
+      return { ok: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('buddy:gmail-disconnect', async () => {
+    try {
+      if (gmailAdapter) {
+        await gmailAdapter.stop()
+        gmailAdapter = null
+      }
+      const s = loadSettings()
+      if (s.integrations?.gmail) {
+        delete s.integrations.gmail
+        saveSettings(s)
+        _cachedSettings = null
+      }
+      return { ok: true }
+    } catch (e) {
+      console.error('[Gmail] Disconnect failed:', e.message)
+      return { ok: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('buddy:gmail-mark-read', async (_event, messageId) => {
+    try {
+      if (!gmailAdapter) return { ok: false, error: 'Gmail not connected' }
+      await gmailAdapter.markRead(messageId)
+      return { ok: true }
+    } catch (e) {
+      console.error('[Gmail] Mark-read failed:', e.message)
+      return { ok: false, error: e.message }
+    }
+  })
 }
 
 // ── Integrations ────────────────────────────────────────────────
+
+function broadcastNotification(notification) {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('buddy:notification', notification)
+  }
+}
+
+function broadcastGmailStatus(statusInfo) {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('buddy:gmail-status', statusInfo)
+  }
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.webContents.send('buddy:gmail-status', statusInfo)
+  }
+}
+
+async function startGmailAdapter({ accessToken, refreshToken, clientId, clientSecret }) {
+  if (gmailAdapter) {
+    await gmailAdapter.stop()
+    gmailAdapter = null
+  }
+
+  const { createGmailAdapter } = await import('./integrations/gmail.mjs')
+  gmailAdapter = createGmailAdapter({ accessToken, refreshToken, clientId, clientSecret })
+
+  await gmailAdapter.start(broadcastNotification, broadcastGmailStatus)
+  return gmailAdapter
+}
+
 async function startIntegrations() {
   const settings = loadSettingsDecrypted() // use decrypted tokens
+
+  // ── Slack ──────────────────────────────────────────────────────
   const slackSettings = settings.integrations?.slack ?? {}
   const appToken = slackSettings.appToken || process.env.SLACK_APP_TOKEN
   const botToken = slackSettings.botToken || process.env.SLACK_BOT_TOKEN
@@ -330,16 +485,13 @@ async function startIntegrations() {
 
   function onNotification(notification) {
     slackAdapter.replyHandlers.forEach((fn, id) => replyHandlers.set(id, fn))
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('buddy:notification', notification)
-    }
+    broadcastNotification(notification)
   }
 
-  function onStatus(statusInfo) {
+  function onSlackStatus(statusInfo) {
     if (win && !win.isDestroyed()) {
       win.webContents.send('buddy:slack-status', statusInfo)
     }
-    // Also forward to settings window if open
     if (settingsWin && !settingsWin.isDestroyed()) {
       settingsWin.webContents.send('buddy:slack-status', statusInfo)
     }
@@ -347,9 +499,24 @@ async function startIntegrations() {
 
   register({
     name: 'slack',
-    start: (onNotif) => slackAdapter.start(onNotif, onStatus),
+    start: (onNotif) => slackAdapter.start(onNotif, onSlackStatus),
     stop: () => slackAdapter.stop(),
   })
+
+  // ── Gmail ──────────────────────────────────────────────────────
+  const gmailSettings = settings.integrations?.gmail ?? {}
+  if (gmailSettings.accessToken && gmailSettings.refreshToken && gmailSettings.clientId && gmailSettings.clientSecret) {
+    try {
+      await startGmailAdapter({
+        accessToken:  gmailSettings.accessToken,
+        refreshToken: gmailSettings.refreshToken,
+        clientId:     gmailSettings.clientId,
+        clientSecret: gmailSettings.clientSecret,
+      })
+    } catch (e) {
+      console.error('[Gmail] Failed to start on boot:', e.message)
+    }
+  }
 
   await startAll(onNotification)
 }

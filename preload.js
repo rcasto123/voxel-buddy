@@ -51,4 +51,19 @@ contextBridge.exposeInMainWorld('buddy', {
 
   // ── External links ────────────────────────────────────────────
   openExternal: (url) => ipcRenderer.invoke('buddy:open-external', url),
+
+  // ── Gmail ─────────────────────────────────────────────────────
+  gmailAuthStart: (clientId, clientSecret) =>
+    ipcRenderer.invoke('buddy:gmail-auth-start', { clientId, clientSecret }),
+
+  gmailDisconnect: () => ipcRenderer.invoke('buddy:gmail-disconnect'),
+
+  gmailMarkRead: (messageId) => ipcRenderer.invoke('buddy:gmail-mark-read', messageId),
+
+  // Fires with { status: 'connecting'|'connected'|'error', error?: string }
+  onGmailStatus: (callback) => {
+    const handler = (_event, statusInfo) => callback(statusInfo)
+    ipcRenderer.on('buddy:gmail-status', handler)
+    return () => ipcRenderer.removeListener('buddy:gmail-status', handler)
+  },
 })

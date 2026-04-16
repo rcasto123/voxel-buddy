@@ -5,13 +5,15 @@
       "name": "Vite (renderer dev server)",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 5173
+      "port": 5173,
+      "autoPort": false
     },
     {
       "name": "Electron + Vite (full dev)",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:all"],
-      "port": 5173
+      "port": 5173,
+      "autoPort": false
     }
   ]
 }

@@ -16,6 +16,9 @@ export const useStore = create((set, get) => ({
   slackStatus: 'unknown',
   slackError: null,
 
+  gmailStatus: 'unknown',
+  gmailError: null,
+
   settings: {
     mascotName: 'Buddy',
     layout: 'desktop-pet',
@@ -44,6 +47,8 @@ export const useStore = create((set, get) => ({
   setFirstRun: (v) => set({ isFirstRun: v }),
 
   setSlackStatus: ({ status, error = null }) => set({ slackStatus: status, slackError: error }),
+
+  setGmailStatus: ({ status, error = null }) => set({ gmailStatus: status, gmailError: error }),
 
   updateSettings: (partial) =>
     set((state) => ({

@@ -69,13 +69,14 @@ function SlackStatusBadge({ status, error }) {
 }
 
 export function SettingsPanel() {
-  const { slackStatus, slackError, setSlackStatus } = useStore()
+  const { slackStatus, slackError, setSlackStatus, gmailStatus, gmailError, setGmailStatus } = useStore()
 
   const [form, setForm] = useState({
     mascotName: 'Buddy',
     mascotCharacter: 'airie',
     slackAppToken: '',
     slackBotToken: '',
+    aiApiKey: '',
     autoStart: false,
     muted: false,
   })
@@ -83,11 +84,24 @@ export function SettingsPanel() {
   const [tokensChanged, setTokensChanged] = useState(false)
   const originalTokens = useRef({ app: '', bot: '' })
 
+  // Gmail-specific state
+  const [gmailConnectedEmail, setGmailConnectedEmail] = useState(null)
+  const [showGmailCredentials, setShowGmailCredentials] = useState(false)
+  const [gmailClientId, setGmailClientId] = useState('')
+  const [gmailClientSecret, setGmailClientSecret] = useState('')
+  const [gmailAuthStatus, setGmailAuthStatus] = useState(null) // null | 'connecting' | 'error'
+  const [gmailAuthError, setGmailAuthError] = useState(null)
+
   // Listen for connection status updates pushed from main process
   useEffect(() => {
     if (!window.buddy) return
     return window.buddy.onSlackStatus(setSlackStatus)
   }, [setSlackStatus])
+
+  useEffect(() => {
+    if (!window.buddy?.onGmailStatus) return
+    return window.buddy.onGmailStatus(setGmailStatus)
+  }, [setGmailStatus])
 
   useEffect(() => {
     async function load() {
@@ -104,9 +118,16 @@ export function SettingsPanel() {
           mascotCharacter: s.mascotCharacter ?? 'airie',
           slackAppToken: appToken,
           slackBotToken: botToken,
+          aiApiKey: s.integrations?.ai?.apiKey ?? '',
           autoStart: loginItemEnabled,
           muted: s.muted ?? false,
         })
+
+        // Gmail — show connected state if tokens are saved
+        const gmailEmail = s.integrations?.gmail?.email ?? null
+        if (gmailEmail) {
+          setGmailConnectedEmail(gmailEmail)
+        }
       } catch (e) {
         console.error('[Settings] Failed to load:', e)
       }
@@ -118,6 +139,42 @@ export function SettingsPanel() {
     setForm((f) => ({ ...f, [key]: value }))
     setSaveStatus(null)
     if (key === 'slackAppToken' || key === 'slackBotToken') setTokensChanged(true)
+  }
+
+  async function handleGmailConnect() {
+    if (!gmailClientId.trim() || !gmailClientSecret.trim()) {
+      setGmailAuthError('Please enter both Client ID and Client Secret.')
+      return
+    }
+    setGmailAuthStatus('connecting')
+    setGmailAuthError(null)
+    try {
+      const result = await window.buddy?.gmailAuthStart(gmailClientId.trim(), gmailClientSecret.trim())
+      if (result?.ok) {
+        setGmailConnectedEmail(result.email ?? 'Connected')
+        setShowGmailCredentials(false)
+        setGmailClientId('')
+        setGmailClientSecret('')
+        setGmailAuthStatus(null)
+      } else {
+        setGmailAuthError(result?.error ?? 'Unknown error during OAuth flow.')
+        setGmailAuthStatus('error')
+      }
+    } catch (e) {
+      setGmailAuthError(e.message)
+      setGmailAuthStatus('error')
+    }
+  }
+
+  async function handleGmailDisconnect() {
+    try {
+      await window.buddy?.gmailDisconnect()
+      setGmailConnectedEmail(null)
+      setGmailAuthStatus(null)
+      setGmailAuthError(null)
+    } catch (e) {
+      console.error('[Settings] Gmail disconnect failed:', e)
+    }
   }
 
   async function handleSave() {
@@ -132,6 +189,9 @@ export function SettingsPanel() {
           slack: {
             appToken: form.slackAppToken.trim(),
             botToken: form.slackBotToken.trim(),
+          },
+          ai: {
+            apiKey: form.aiApiKey.trim(),
           },
         },
       }
@@ -252,6 +312,150 @@ export function SettingsPanel() {
               Tokens changed — Slack will reconnect when you save.
             </p>
           )}
+        </section>
+
+        <div className="border-t border-buddy-border" />
+
+        {/* ── Gmail Integration ── */}
+        <section className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-bold text-teal-400 uppercase tracking-widest">Gmail</h2>
+            <button
+              type="button"
+              onClick={() => window.buddy?.openExternal('https://console.cloud.google.com/apis/credentials')}
+              className="text-xs text-teal-400/70 hover:text-teal-400 underline underline-offset-2 transition-colors"
+            >
+              Get credentials →
+            </button>
+          </div>
+
+          {gmailConnectedEmail ? (
+            /* Connected state */
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between bg-buddy-bg rounded-lg px-3 py-2.5 border border-buddy-border">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full shrink-0 bg-green-400" />
+                  <span className="text-xs text-buddy-muted">Connected</span>
+                  <span className="text-xs text-buddy-text ml-1 font-mono truncate max-w-[180px]">{gmailConnectedEmail}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGmailDisconnect}
+                  className="text-xs text-red-400/80 hover:text-red-400 underline underline-offset-2 transition-colors"
+                >
+                  Disconnect
+                </button>
+              </div>
+
+              {/* Live Gmail status badge */}
+              {gmailStatus !== 'unknown' && (
+                <SlackStatusBadge status={gmailStatus} error={gmailError} />
+              )}
+            </div>
+          ) : (
+            /* Not connected state */
+            <div className="flex flex-col gap-3">
+              {!showGmailCredentials ? (
+                <button
+                  type="button"
+                  onClick={() => setShowGmailCredentials(true)}
+                  className="w-full py-2.5 rounded-xl border border-teal-400/40 text-sm font-medium text-teal-400
+                    bg-teal-400/5 hover:bg-teal-400/10 transition-colors"
+                >
+                  Connect Gmail
+                </button>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs text-buddy-muted/80">
+                    Enter your OAuth 2.0 credentials from{' '}
+                    <button
+                      type="button"
+                      onClick={() => window.buddy?.openExternal('https://console.cloud.google.com/apis/credentials')}
+                      className="text-teal-400/80 underline underline-offset-2 hover:text-teal-400"
+                    >
+                      Google Cloud Console
+                    </button>
+                    . Use redirect URI:{' '}
+                    <span className="font-mono text-buddy-text/80 text-xs">http://localhost:42813/oauth/google/callback</span>
+                  </p>
+
+                  <TokenInput
+                    label="Google Client ID"
+                    value={gmailClientId}
+                    onChange={setGmailClientId}
+                    placeholder="123456789-abc....apps.googleusercontent.com"
+                  />
+                  <TokenInput
+                    label="Google Client Secret"
+                    value={gmailClientSecret}
+                    onChange={setGmailClientSecret}
+                    placeholder="GOCSPX-..."
+                  />
+
+                  {gmailAuthError && (
+                    <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+                      {gmailAuthError}
+                    </p>
+                  )}
+
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => { setShowGmailCredentials(false); setGmailAuthError(null) }}
+                      className="px-4 py-2 rounded-xl text-xs text-buddy-muted border border-buddy-border
+                        hover:border-buddy-glow/30 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleGmailConnect}
+                      disabled={gmailAuthStatus === 'connecting'}
+                      className="flex-1 py-2 rounded-xl text-sm font-medium text-teal-400
+                        border border-teal-400/40 bg-teal-400/5 hover:bg-teal-400/10
+                        transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {gmailAuthStatus === 'connecting' ? 'Connecting…' : 'Connect Gmail'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        <div className="border-t border-buddy-border" />
+
+        {/* ── AI Suggestions ── */}
+        <section className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-bold text-buddy-glow uppercase tracking-widest">AI Suggestions</h2>
+            <button
+              type="button"
+              onClick={() => window.buddy?.openExternal('https://console.anthropic.com')}
+              className="text-xs text-buddy-glow/70 hover:text-buddy-glow underline underline-offset-2 transition-colors"
+            >
+              Get a key →
+            </button>
+          </div>
+
+          <TokenInput
+            label="Claude API Key"
+            value={form.aiApiKey}
+            onChange={(v) => update('aiApiKey', v)}
+            placeholder="sk-ant-..."
+          />
+
+          <p className="text-xs text-buddy-muted/70 leading-relaxed">
+            Airie will suggest 3 casual replies when you get a notification. Suggestions are optional and fail silently.{' '}
+            <button
+              type="button"
+              onClick={() => window.buddy?.openExternal('https://console.anthropic.com')}
+              className="text-buddy-glow/70 hover:text-buddy-glow underline underline-offset-2 transition-colors"
+            >
+              console.anthropic.com
+            </button>
+          </p>
         </section>
 
         <div className="border-t border-buddy-border" />

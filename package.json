@@ -94,6 +94,7 @@
     "@slack/web-api": "^7.0.0",
     "electron": "^33.0.0",
     "electron-updater": "^6.8.3",
+    "googleapis": "^171.4.0",
     "uuid": "^11.0.0",
     "zustand": "^5.0.0"
   },

@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useEffect, Component } from 'react'
+import { useEffect, useState, Component } from 'react'
 import { useStore } from './store.js'
 import { DesktopPet } from './layouts/DesktopPet.jsx'
 import { SettingsPanel } from './layouts/SettingsPanel.jsx'
@@ -33,7 +33,13 @@ class ErrorBoundary extends Component {
 
 export function App() {
   const { layoutMode, addNotification, setMuted, setFirstRun, updateSettings, setSlackStatus } = useStore()
-  const isSettings = window.location.hash === '#/settings'
+  const [isSettings, setIsSettings] = useState(window.location.hash === '#/settings')
+
+  useEffect(() => {
+    const onHashChange = () => setIsSettings(window.location.hash === '#/settings')
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
 
   useEffect(() => {
     if (!window.buddy) return

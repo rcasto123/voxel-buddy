@@ -9,6 +9,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
  *   onReplySending: () => void   — called when send starts (triggers thinking animation)
  *   onReplyDone: () => void      — called when send completes (exits thinking)
  *   autoDismissMs: number (default 8000, 0 = never)
+ *   suggestions: string[]        — AI reply suggestions (can be empty)
  */
 export function SpeechBubble({
   notification,
@@ -17,11 +18,14 @@ export function SpeechBubble({
   onReplySending,
   onReplyDone,
   autoDismissMs = 8000,
+  suggestions = [],
 }) {
   const [replyText, setReplyText] = useState('')
   const [sendState, setSendState] = useState('idle') // 'idle' | 'sending' | 'sent' | 'error'
   const [sendError, setSendError] = useState(null)
   const [exiting, setExiting] = useState(false)
+  const [chipsHidden, setChipsHidden] = useState(false)
+  const inputRef = useRef(null)
 
   const onDismissRef = useRef(onDismiss)
   useEffect(() => { onDismissRef.current = onDismiss })
@@ -78,6 +82,12 @@ export function SpeechBubble({
     if (e.key === 'Escape') dismiss()
   }
 
+  function handleChipClick(suggestion) {
+    setReplyText(suggestion)
+    setChipsHidden(true)
+    inputRef.current?.focus()
+  }
+
   const typeLabel = notification.type === 'dm' ? 'DM' : notification.type === 'mention' ? 'Mention' : 'Email'
   const sourceLabel = notification.source === 'slack' ? '🔔 Slack' : '📧 Gmail'
 
@@ -107,13 +117,25 @@ export function SpeechBubble({
           aria-label="Dismiss">×</button>
       </div>
 
-      {/* AI quip placeholder */}
-      <div className="border-t border-buddy-border pt-2">
-        <p className="text-xs text-buddy-muted italic">
-          💬 <span className="text-buddy-glow/70">Buddy</span>
-          {' '}· <span className="text-buddy-muted">AI responses coming in Phase 3</span>
-        </p>
-      </div>
+      {/* AI suggestion chips */}
+      {sendState === 'idle' && !chipsHidden && suggestions.length > 0 && (
+        <div className="border-t border-buddy-border pt-2 flex flex-col gap-1.5 animate-fade-in">
+          <p className="text-[10px] text-buddy-muted/60 uppercase tracking-wider">✨ suggestions</p>
+          <div className="flex flex-wrap gap-1.5">
+            {suggestions.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => handleChipClick(s)}
+                className="bg-white/10 hover:bg-white/20 text-white/80 text-xs px-2 py-1
+                  rounded-full border border-white/10 cursor-pointer transition-colors"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Reply input */}
       <div className="border-t border-buddy-border pt-2 flex gap-2">
@@ -132,13 +154,17 @@ export function SpeechBubble({
         )}
         {sendState === 'idle' && (
           <>
-            <input type="text" value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
+            <input
+              ref={inputRef}
+              type="text"
+              value={replyText}
+              onChange={(e) => { setReplyText(e.target.value); if (e.target.value) setChipsHidden(true) }}
               onKeyDown={handleKeyDown} onFocus={clearTimer} onBlur={startTimer}
               placeholder="Reply…"
               className="flex-1 bg-buddy-bg border border-buddy-border rounded-lg px-2.5 py-1.5
                 text-sm text-buddy-text placeholder:text-buddy-muted
-                focus:outline-none focus:border-buddy-glow/60 transition-colors" />
+                focus:outline-none focus:border-buddy-glow/60 transition-colors"
+            />
             <button onClick={handleSend} disabled={!replyText.trim()}
               className="px-3 py-1.5 rounded-lg text-xs font-medium bg-buddy-glow/20 text-buddy-glow
                 border border-buddy-glow/30 hover:bg-buddy-glow/30

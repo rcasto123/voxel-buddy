@@ -77,6 +77,39 @@
   72%       { transform: translateY(-6px) scaleX(1.05) rotate(-0.8deg); }
 }
 
+/* Glide: secondary wing-flap layer on top of the hop — simulates flapping */
+@keyframes airieWingFlap {
+  0%, 100% { filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28)) saturate(1); }
+  50%       { filter: drop-shadow(0 9px 22px rgba(96, 210, 196, 0.55)) saturate(1.1); }
+}
+
+/* Idle blink — occasional brightness dip + micro-tilt */
+@keyframes airieIdleBlink {
+  0%, 93%, 100% { filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28)); }
+  95%            { filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28)) brightness(0.55); }
+  97%            { filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28)); }
+}
+
+/* Ground shadow pulse — shrinks when she hops up, widens on landing */
+@keyframes airieShadowWalk {
+  0%, 100% { transform: scaleX(1)    scaleY(1);    opacity: 0.38; }
+  22%       { transform: scaleX(0.55) scaleY(0.5);  opacity: 0.18; }
+  50%       { transform: scaleX(1.08) scaleY(1.1);  opacity: 0.48; }
+  72%       { transform: scaleX(0.7)  scaleY(0.65); opacity: 0.24; }
+}
+
+@keyframes airieShadowIdle {
+  0%, 100% { transform: scaleX(1)    scaleY(1); opacity: 0.32; }
+  50%       { transform: scaleX(0.92) scaleY(0.9); opacity: 0.25; }
+}
+
+/* Motion streak — small horizontal line zipping behind Airie */
+@keyframes airieStreak {
+  0%   { transform: translateX(0)    scaleX(0.2); opacity: 0; }
+  20%  { opacity: 0.6; }
+  100% { transform: translateX(-28px) scaleX(1);   opacity: 0; }
+}
+
 /* Alert bounce: big excited jump with squash & stretch */
 @keyframes airieAlertBounce {
   0%   { transform: translateY(0)     scaleX(1)    scaleY(1); }
@@ -146,16 +179,36 @@
   will-change: transform, filter;
 }
 
-/* IDLE — organic float with wing-flap */
+/* IDLE — organic float + occasional blink */
 .airie--idle .airie-img {
-  animation: airieFloat 3.8s ease-in-out infinite;
+  animation: airieFloat     3.8s ease-in-out infinite,
+             airieIdleBlink 7s   ease-in-out infinite;
   filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28));
 }
 
-/* WALK — hop cycle; 'walk' is now its own visual state so no !important needed */
+/* WALK — hop cycle + wing-flap shimmer, applied to BOTH stacked frames */
 .airie--walk .airie-img {
-  animation: airieHop 0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite;
-  filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28));
+  animation: airieHop       0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite,
+             airieWingFlap  0.52s ease-in-out infinite;
+}
+
+/* Two-frame walk cycle: frame-a (active pose) and frame-b (mid-stride pose)
+   alternate visibility every 260ms. Frame B is offset by -260ms so they
+   swap on the beat of the hop — visible leg swing + foot-down on each step. */
+@keyframes airieFrameSwap {
+  0%, 49.99% { opacity: 1; }
+  50%, 100%  { opacity: 0; }
+}
+.airie--walk .airie-frame-a {
+  animation: airieHop         0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite,
+             airieWingFlap    0.52s ease-in-out infinite,
+             airieFrameSwap   0.52s linear infinite;
+}
+.airie--walk .airie-frame-b {
+  opacity: 0;
+  animation: airieHop         0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite,
+             airieWingFlap    0.52s ease-in-out infinite,
+             airieFrameSwap   0.52s linear -0.26s infinite;
 }
 
 /* ALERT — squash-stretch bounce + bright glow */
@@ -188,6 +241,64 @@
   animation: airieHappyWiggle 0.68s ease-in-out 2;
   filter: drop-shadow(0 8px 32px rgba(96, 210, 196, 0.88));
 }
+
+/* ── Ground shadow ─────────────────────────────────────
+   A soft elliptical shadow beneath Airie. Scale pulses with hop cycle
+   to sell contact with the ground. Hidden during sleep (she's on cloud). */
+.airie-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 56%;
+  height: 10px;
+  margin-left: -28%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center,
+              rgba(15, 23, 42, 0.55) 0%,
+              rgba(15, 23, 42, 0.18) 55%,
+              rgba(15, 23, 42, 0) 80%);
+  filter: blur(1.5px);
+  transform-origin: center;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.airie--idle .airie-shadow  { animation: airieShadowIdle 3.8s ease-in-out infinite; }
+.airie--walk .airie-shadow  { animation: airieShadowWalk 0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite; }
+.airie--alert .airie-shadow,
+.airie--wave .airie-shadow,
+.airie--happy .airie-shadow { animation: airieShadowIdle 1s ease-in-out infinite; }
+.airie--sleep .airie-shadow    { display: none; }
+.airie--thinking .airie-shadow { animation: airieShadowIdle 2.5s ease-in-out infinite; }
+
+/* ── Motion streaks ────────────────────────────────────
+   Three small horizontal streaks that zip backwards when Airie walks.
+   Hidden by default; animated only during .airie--walk. Staggered. */
+.airie-streaks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18%;
+  pointer-events: none;
+  opacity: 0;
+}
+.airie-streaks span {
+  position: absolute;
+  right: 14%;
+  width: 16px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(96, 210, 196, 0) 0%, rgba(96, 210, 196, 0.85) 100%);
+  transform-origin: right center;
+}
+.airie-streaks span:nth-child(1) { top: 30%; }
+.airie-streaks span:nth-child(2) { top: 55%; width: 22px; }
+.airie-streaks span:nth-child(3) { top: 78%; width: 14px; }
+
+.airie--walk .airie-streaks { opacity: 1; }
+.airie--walk .airie-streaks span:nth-child(1) { animation: airieStreak 0.52s ease-out infinite; }
+.airie--walk .airie-streaks span:nth-child(2) { animation: airieStreak 0.52s ease-out infinite 0.13s; }
+.airie--walk .airie-streaks span:nth-child(3) { animation: airieStreak 0.52s ease-out infinite 0.26s; }
 
 /* ── Desktop Pet ──────────────────────────────────────── */
 body { user-select: none; }

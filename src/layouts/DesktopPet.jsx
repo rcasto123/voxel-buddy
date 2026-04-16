@@ -8,10 +8,20 @@ import { playNotify, playSuccess } from '../services/sound.js'
 import { suggestReplies } from '../services/aiSuggest.js'
 
 const MASCOT_SIZE = 100
-const WALK_SPEED = 40   // px/s
+const WALK_SPEED = 42   // px/s — peak speed (eased in/out during the walk)
 const IDLE_AFTER = 20   // seconds of inactivity before sleep
 
 function rand(a, b) { return a + Math.random() * (b - a) }
+
+// Eased speed curve — accelerates in, cruises, decelerates out so walk starts
+// and ends feel natural instead of teleporting to full speed.
+function easedSpeedFactor(t) {
+  // t in [0, 1]. Returns a value in [0, 1] with a smooth trapezoid shape:
+  // 0 → ramp up to 1 by t=0.25, cruise until t=0.75, ramp down to 0 by t=1.
+  if (t < 0.25) return t / 0.25
+  if (t > 0.75) return (1 - t) / 0.25
+  return 1
+}
 
 const VISUAL_STATE = {
   idle: 'idle', walk: 'walk', alert: 'alert',
@@ -107,17 +117,33 @@ export function DesktopPet() {
           setState('sleep')
           return scheduleSleepPoll() // switch to low-power poll
         } else if (stateTimerRef.current >= stateDurationRef.current) {
-          facingRef.current = Math.random() > 0.5 ? 1 : -1
-          setFacing(facingRef.current)
-          setState('walk', rand(2, 4))
+          // Wander personality:
+          //   60% — walk off in a random direction for 2-5s
+          //   25% — quick "glance" in the opposite direction (just a turn, no walk)
+          //   15% — stand and stare for another 2-4s (extend idle)
+          const roll = Math.random()
+          if (roll < 0.6) {
+            facingRef.current = Math.random() > 0.5 ? 1 : -1
+            setFacing(facingRef.current)
+            setState('walk', rand(2, 5))
+          } else if (roll < 0.85) {
+            facingRef.current = -facingRef.current
+            setFacing(facingRef.current)
+            setState('idle', rand(1.2, 2.2))
+          } else {
+            setState('idle', rand(2, 4))
+          }
         }
       } else if (current === 'walk') {
-        const newX = posXRef.current + facingRef.current * WALK_SPEED * dt
+        // Eased speed — acceleration at the start, deceleration at the end.
+        const progress = Math.min(1, stateTimerRef.current / stateDurationRef.current)
+        const speed = WALK_SPEED * easedSpeedFactor(progress)
+        const newX = posXRef.current + facingRef.current * speed * dt
         const clamped = Math.max(minX, Math.min(maxX, newX))
         if (clamped !== newX) { facingRef.current = -facingRef.current; setFacing(facingRef.current) }
         posXRef.current = clamped
         setPosX(clamped)
-        if (stateTimerRef.current >= stateDurationRef.current) setState('idle')
+        if (stateTimerRef.current >= stateDurationRef.current) setState('idle', rand(1.5, 3.5))
       } else if (current === 'alert') {
         if (stateTimerRef.current >= stateDurationRef.current) setState('wave', 2.5)
       } else if (current === 'wave') {
@@ -231,8 +257,9 @@ export function DesktopPet() {
       <div className="absolute pointer-events-auto cursor-pointer"
         style={{
           bottom: mascotBottom, left: mascotLeft,
-          transform: facing < 0 ? 'scaleX(-1)' : 'none',
-          transition: 'transform 0.15s ease',
+          transform: facing < 0 ? 'scaleX(-1)' : 'scaleX(1)',
+          // Bouncier 0.28s pivot — reads as a deliberate turn, not a snap
+          transition: 'transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
         }}
         onClick={handleMascotClick}
         onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>

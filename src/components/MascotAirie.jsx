@@ -34,12 +34,14 @@ import airieSurprised  from '../assets/airie/surprised.png'
 
 import walk1 from '../assets/airie/walk1.png'
 import walk2 from '../assets/airie/walk2.png'
-import walk3 from '../assets/airie/walk3.png'
-import walk4 from '../assets/airie/walk4.png'
 import fly1  from '../assets/airie/fly1.png'
 import fly2  from '../assets/airie/fly2.png'
-import fly3  from '../assets/airie/fly3.png'
-import fly4  from '../assets/airie/fly4.png'
+// Note: walk3/walk4 and fly3/fly4 are intentionally unused here.
+// The sprite sheet includes them as dramatic action poses (horizontal dive,
+// mid-air glide) — great keyframes, but they break the smoothness of a tight
+// 2-frame loop against the upright walk1/fly1 poses. We keep the cycles
+// limited to compatible poses for clean locomotion; action frames can be
+// repurposed later as standalone states (e.g. a "dash" or "leap" animation).
 
 const STATE_IMAGE = {
   idle:       airieActive,      // fallback — overridden by 4-frame hover below
@@ -55,8 +57,8 @@ const STATE_IMAGE = {
   surprised:  airieSurprised,
 }
 
-const WALK_FRAMES = [walk1, walk2, walk3, walk4]
-const FLY_FRAMES  = [fly1, fly2, fly3, fly4]
+const WALK_FRAMES = [walk1, walk2]
+const FLY_FRAMES  = [fly1, fly2]
 
 const IMG_STYLE = {
   width: '100%',

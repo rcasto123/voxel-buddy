@@ -54,12 +54,15 @@ export function DesktopPet() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  // Hello on launch — Airie waves hi the first time DesktopPet mounts.
-  // Runs once; the rAF loop takes over afterward.
+  // Hello on launch — Airie fades/grows in, then waves hi.
+  // Start idle (so the fade happens on a calm pose), wave after the fade,
+  // then return to normal idle. The rAF loop takes over afterward.
+  const [justMounted, setJustMounted] = useState(true)
   useEffect(() => {
-    const t = setTimeout(() => setMascotState('wave'), 400)
-    const t2 = setTimeout(() => setMascotState('idle'), 2400)
-    return () => { clearTimeout(t); clearTimeout(t2) }
+    const fadeDone = setTimeout(() => setJustMounted(false), 650)
+    const toWave   = setTimeout(() => setMascotState('wave'), 750)
+    const toIdle   = setTimeout(() => setMascotState('idle'), 2700)
+    return () => { clearTimeout(fadeDone); clearTimeout(toWave); clearTimeout(toIdle) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -298,7 +301,7 @@ export function DesktopPet() {
         </div>
       )}
 
-      <div className="absolute pointer-events-auto cursor-pointer"
+      <div className={`absolute pointer-events-auto cursor-pointer ${justMounted ? 'airie-entering' : ''}`}
         style={{
           bottom: mascotBottom, left: mascotLeft,
           transform: facing < 0 ? 'scaleX(-1)' : 'scaleX(1)',

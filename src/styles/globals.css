@@ -163,6 +163,53 @@
   50%       { filter: drop-shadow(0 10px 36px rgba(96, 210, 196, 1)); }
 }
 
+/* ── Pose-specific keyframes for sprite-sheet behaviors ──────
+   These are tailored to the static pose each sprite is drawn in,
+   so the motion amplifies what the art is already expressing. */
+
+/* Wave: the sprite has her hand raised. We arc her body slightly L/R
+   so the raised hand traces a small wave, with a small warm bob up. */
+@keyframes airieWaveHello {
+  0%, 100% { transform: translateY(-2px) rotate(-4deg); }
+  25%       { transform: translateY(-10px) rotate(4deg); }
+  50%       { transform: translateY(-2px) rotate(-4deg); }
+  75%       { transform: translateY(-10px) rotate(4deg); }
+}
+
+/* Meditate: sitting lotus on a cloud. Almost zero horizontal motion —
+   just a very slow vertical levitation and aura breath. */
+@keyframes airieMeditateLevitate {
+  0%, 100% { transform: translateY(0)    scale(1); }
+  50%       { transform: translateY(-4px) scale(1.015); }
+}
+@keyframes airieMeditateAura {
+  0%, 100% { filter: drop-shadow(0 6px 18px rgba(120, 220, 200, 0.4)); }
+  50%       { filter: drop-shadow(0 10px 28px rgba(160, 240, 220, 0.75)); }
+}
+
+/* Love: hugging a heart. Rhythmic heartbeat-style double pulse. */
+@keyframes airieLovePulse {
+  0%   { transform: scale(1)    translateY(0); }
+  14%  { transform: scale(1.08) translateY(-4px); }
+  28%  { transform: scale(1)    translateY(0); }
+  42%  { transform: scale(1.06) translateY(-3px); }
+  56%  { transform: scale(1)    translateY(0); }
+  100% { transform: scale(1)    translateY(0); }
+}
+@keyframes airieLoveGlow {
+  0%, 100% { filter: drop-shadow(0 6px 18px rgba(255, 150, 180, 0.5)); }
+  50%       { filter: drop-shadow(0 10px 28px rgba(255, 180, 210, 0.9)); }
+}
+
+/* Startup entry: fade + gentle grow. Used once when DesktopPet mounts. */
+@keyframes airieEnter {
+  0%   { opacity: 0; transform: translateY(10px) scale(0.9); }
+  100% { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.airie-entering {
+  animation: airieEnter 0.6s cubic-bezier(0.22, 1.4, 0.36, 1) both;
+}
+
 /* ── State rules ─────────────────────────────────────── */
 
 /* Base: smooth filter change on state switch */
@@ -191,37 +238,53 @@
   filter: drop-shadow(0 5px 14px rgba(96, 210, 196, 0.28));
 }
 
-/* WALK — 4-frame locomotion cycle extracted from the sprite sheet.
-   Each of 4 stacked <img> frames is visible for 25% of the 520ms loop.
-   airieCycle4 holds opacity:1 for the first quarter, 0 for the rest; each
-   frame staggers its animation-delay by -130ms so they round-robin.
-   Result: real leg-swap locomotion, not a bouncing sprite.
-   Hop + shadow pulse retained for vertical motion and ground contact. */
-@keyframes airieCycle4 {
-  0%, 24.99% { opacity: 1; }
-  25%, 100%  { opacity: 0; }
+/* WALK — 2-frame locomotion cycle (walk1 upright-step ↔ walk2 mid-stride).
+   Soft crossfade instead of a hard snap: each frame fades across a 20% window
+   centered on the swap. That reads as motion rather than flicker.
+   Hop + shadow pulse retained for vertical bob and ground contact. */
+@keyframes airieCycle2A {
+  0%   { opacity: 1; }
+  45%  { opacity: 1; }
+  55%  { opacity: 0; }
+  95%  { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes airieCycle2B {
+  0%   { opacity: 0; }
+  45%  { opacity: 0; }
+  55%  { opacity: 1; }
+  95%  { opacity: 1; }
+  100% { opacity: 0; }
 }
 .airie--walk .airie-img {
-  animation: airieHop       0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite,
-             airieCycle4    0.52s steps(1, end) infinite;
+  animation: airieHop 0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite;
 }
-.airie--walk .airie-frame-0 { animation-delay: 0s,       0s; }
-.airie--walk .airie-frame-1 { animation-delay: 0s,  -0.13s; opacity: 0; }
-.airie--walk .airie-frame-2 { animation-delay: 0s,  -0.26s; opacity: 0; }
-.airie--walk .airie-frame-3 { animation-delay: 0s,  -0.39s; opacity: 0; }
+.airie--walk .airie-frame-0 {
+  animation: airieHop      0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite,
+             airieCycle2A  0.52s linear infinite;
+}
+.airie--walk .airie-frame-1 {
+  animation: airieHop      0.52s cubic-bezier(0.33, 0, 0.66, 1) infinite,
+             airieCycle2B  0.52s linear infinite;
+}
 
-/* IDLE hover cycle — 4-frame flying loop at a much calmer tempo (1.6s).
-   Paired with the existing airieFloat rule on .airie--idle .airie-img.
-   Uses the SAME airieCycle4 keyframe at different duration. */
+/* IDLE hover cycle — 2-frame wing-beat at a calm 1.8s per loop.
+   fly1 (arms at sides) ↔ fly2 (holding tablet), both upright hover poses.
+   Uses a gentler float instead of the walk hop. */
 .airie--idle .airie-img.airie-hover {
   animation: airieFloat     3.8s ease-in-out infinite,
-             airieIdleBlink 7s   ease-in-out infinite,
-             airieCycle4    1.6s steps(1, end) infinite;
+             airieIdleBlink 7s   ease-in-out infinite;
 }
-.airie--idle .airie-frame-0 { animation-delay: 0s, 0s,      0s; }
-.airie--idle .airie-frame-1 { animation-delay: 0s, 0s,  -0.4s; opacity: 0; }
-.airie--idle .airie-frame-2 { animation-delay: 0s, 0s,  -0.8s; opacity: 0; }
-.airie--idle .airie-frame-3 { animation-delay: 0s, 0s,  -1.2s; opacity: 0; }
+.airie--idle .airie-frame-0.airie-hover {
+  animation: airieFloat     3.8s ease-in-out infinite,
+             airieIdleBlink 7s   ease-in-out infinite,
+             airieCycle2A   1.8s linear infinite;
+}
+.airie--idle .airie-frame-1.airie-hover {
+  animation: airieFloat     3.8s ease-in-out infinite,
+             airieIdleBlink 7s   ease-in-out infinite,
+             airieCycle2B   1.8s linear infinite;
+}
 
 /* ALERT — squash-stretch bounce + bright glow */
 .airie--alert .airie-img {
@@ -230,10 +293,12 @@
   filter: drop-shadow(0 8px 28px rgba(96, 210, 196, 0.75));
 }
 
-/* WAVE — fast flutter + pulsing glow */
+/* WAVE — sprite has hand up, so tilt the whole body so the raised hand
+   traces a proper wave arc. Warm glow pulse accompanies. */
 .airie--wave .airie-img {
-  animation: airieWaveFlutter 0.55s ease-in-out infinite,
-             airieGlowPulse   0.8s ease-in-out infinite;
+  animation: airieWaveHello  1.1s ease-in-out infinite,
+             airieGlowPulse  1.0s ease-in-out infinite;
+  transform-origin: 50% 80%; /* pivot near the feet so tilt looks like a body lean */
 }
 
 /* SLEEP — slow breathing, dims and softens */
@@ -254,17 +319,17 @@
   filter: drop-shadow(0 8px 32px rgba(96, 210, 196, 0.88));
 }
 
-/* MEDITATE — very slow breathing float, aqua aura.
-   She's sitting cross-legged on a cloud — keep movement subtle and centered. */
+/* MEDITATE — sitting lotus on a cloud. Near-still levitation + breathing aura. */
 .airie--meditate .airie-img {
-  animation: airieSleepBreathe 6.5s ease-in-out infinite;
-  filter: drop-shadow(0 6px 20px rgba(120, 220, 200, 0.45));
+  animation: airieMeditateLevitate 5.5s ease-in-out infinite,
+             airieMeditateAura     4.5s ease-in-out infinite;
 }
 
-/* LOVE — heart-hug bounce + warm pink glow */
+/* LOVE — heartbeat pulse (double-thump) + warm pink glow. */
 .airie--love .airie-img {
-  animation: airieHappyWiggle 1.4s ease-in-out infinite;
-  filter: drop-shadow(0 6px 22px rgba(255, 160, 180, 0.55));
+  animation: airieLovePulse 1.2s ease-in-out infinite,
+             airieLoveGlow  1.2s ease-in-out infinite;
+  transform-origin: 50% 75%;
 }
 
 /* DETERMINED — firm upward push, crisp glow */

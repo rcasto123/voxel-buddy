@@ -67,6 +67,10 @@ export function SpeechBubble({
         startTimer()
       } else {
         setSendState('sent')
+        // Belt and suspenders: blur during `handleSend` can re-arm the auto-
+        // dismiss timer between `clearTimer()` at the top and this point.
+        // Clear again here so the "Sent ✓" state controls dismissal alone.
+        clearTimer()
         setTimeout(() => dismissRef.current(), 1000)
       }
     } catch (e) {

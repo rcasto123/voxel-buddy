@@ -17,8 +17,20 @@ contextBridge.exposeInMainWorld('buddy', {
     ipcRenderer.send('buddy:dismiss-notification', notificationId),
 
   // ── Mouse / click-through ──────────────────────────────────────
+  // Legacy boolean API — still supported by main.js but prefer the refcount
+  // variants below when multiple interactive regions (mascot + bubble +
+  // context menu) can overlap.
   setMouseOverMascot: (isOver) =>
-    ipcRenderer.send('buddy:mouse-over-mascot', isOver),
+    ipcRenderer.send('buddy:mouse-over-mascot', !!isOver),
+  // Refcount API — call with +1 on region enter, -1 on leave. Main clamps
+  // the count to [0, 10] and flips click-through only on 0↔>0 crossings,
+  // which stops `setIgnoreMouseEvents` thrash when regions touch.
+  bumpMouseOverMascot: (delta) =>
+    ipcRenderer.send('buddy:mouse-over-mascot', { delta }),
+  // Force-reset the refcount to 0 — call on window blur / visibility change
+  // to recover from a missed leave (e.g. browser devtools stealing focus).
+  resetMouseOverMascot: () =>
+    ipcRenderer.send('buddy:mouse-over-mascot', { reset: true }),
 
   // ── Settings ──────────────────────────────────────────────────
   // Tokens returned here are always decrypted — never stored encrypted in renderer

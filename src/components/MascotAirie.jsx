@@ -78,18 +78,33 @@ export const MascotAirie = memo(function MascotAirie({ state = 'idle', size = 12
         <span /><span /><span />
       </div>
 
-      {isWalk ? (
+      {isWalk && walkStrip ? (
         <div
           className="airie-img airie-strip-walk"
           style={{ ...STRIP_STYLE, backgroundImage: `url(${walkStrip})` }}
         />
-      ) : isIdle ? (
+      ) : isIdle && flyStrip ? (
         <div
           className="airie-img airie-strip-idle"
           style={{ ...STRIP_STYLE, backgroundImage: `url(${flyStrip})` }}
         />
       ) : (
-        <img src={src} alt="" className="airie-img" draggable={false} style={IMG_STYLE} />
+        <img
+          src={src}
+          alt=""
+          className="airie-img"
+          draggable={false}
+          style={IMG_STYLE}
+          onError={(e) => {
+            // If the per-state sprite fails to load, fall back to the
+            // always-present `active` pose so Airie never renders as a
+            // broken-image icon. Logged so asset issues are visible.
+            if (e.currentTarget.src !== airieActive) {
+              console.warn('[Airie] sprite failed to load, falling back:', src)
+              e.currentTarget.src = airieActive
+            }
+          }}
+        />
       )}
     </div>
   )

@@ -8,15 +8,33 @@ const CALLBACK_PATH = '/oauth/google/callback'
 const TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 
 /**
- * startOAuthServer()
+ * startOAuthServer({ expectedState })
  *
  * Returns a Promise that resolves with the authorization code Google sends
- * to http://localhost:42813/oauth/google/callback?code=...
+ * to http://localhost:42813/oauth/google/callback?code=…&state=…
  *
- * The server closes itself as soon as it receives the code, or after the
- * 5-minute timeout (in which case the promise rejects).
+ * If `expectedState` is provided, the callback's `state` query param must
+ * match it exactly (timing-safe comparison) — otherwise the request is
+ * rejected with 400 and the promise rejects with an "invalid state" error.
+ * This is standard OAuth 2.0 CSRF protection (RFC 6749 §10.12).
+ *
+ * The server closes itself as soon as it receives a (valid) response or
+ * after the 5-minute timeout.
  */
-function startOAuthServer() {
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false
+  const ab = Buffer.from(a)
+  const bb = Buffer.from(b)
+  if (ab.length !== bb.length) return false
+  try {
+    return require('crypto').timingSafeEqual(ab, bb)
+  } catch {
+    return false
+  }
+}
+
+function startOAuthServer(opts = {}) {
+  const expectedState = opts.expectedState ?? null
   return new Promise((resolve, reject) => {
     let timeoutHandle = null
 
@@ -31,6 +49,19 @@ function startOAuthServer() {
 
       const code = url.searchParams.get('code')
       const error = url.searchParams.get('error')
+      const state = url.searchParams.get('state')
+
+      // CSRF: reject callbacks whose state doesn't match the one we generated
+      // when building the auth URL. Leave the server running so a legitimate
+      // callback can still arrive (the attacker's bogus hit doesn't burn it).
+      if (expectedState && !safeEqual(expectedState, state ?? '')) {
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#0d111a;color:#e2e8f0">
+          <h2 style="color:#f87171">Invalid OAuth state</h2>
+          <p>This request didn't originate from Voxel Buddy. Ignored.</p>
+        </body></html>`)
+        return
+      }
 
       // Send a friendly HTML page back to the browser tab before we close
       const html = code

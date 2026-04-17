@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, shell, saf
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
+const crypto = require('crypto')
 const { autoUpdater } = require('electron-updater')
 const { register, startAll, stopAll, reset } = require('./integrations/index.js')
 const { startOAuthServer } = require('./integrations/oauth-server.js')
@@ -41,14 +42,67 @@ function decryptToken(value) {
 }
 
 // ── Settings helpers ────────────────────────────────────────────
+//
+// Cache invariant: `_cachedSettings` is ALWAYS plaintext (tokens decrypted).
+// Disk representation is encrypted-on-tokens. This removes the footgun where
+// callers had to remember to bust the cache after a write, and prevents
+// plaintext<->ciphertext confusion in callers like `loadSettings()` that
+// previously returned cipher strings.
 let _cachedSettings = null
 
+function decryptAllTokens(s) {
+  if (!s) return s
+  const out = { ...s, integrations: { ...(s.integrations ?? {}) } }
+  if (out.integrations.slack) {
+    out.integrations.slack = {
+      ...out.integrations.slack,
+      appToken: decryptToken(out.integrations.slack.appToken),
+      botToken: decryptToken(out.integrations.slack.botToken),
+    }
+  }
+  if (out.integrations.gmail) {
+    out.integrations.gmail = {
+      ...out.integrations.gmail,
+      accessToken:  decryptToken(out.integrations.gmail.accessToken),
+      refreshToken: decryptToken(out.integrations.gmail.refreshToken),
+      clientId:     decryptToken(out.integrations.gmail.clientId),
+      clientSecret: decryptToken(out.integrations.gmail.clientSecret),
+      email:        out.integrations.gmail.email ?? null,
+    }
+  }
+  return out
+}
+
+function encryptAllTokens(s) {
+  const out = { ...s, integrations: { ...(s.integrations ?? {}) } }
+  if (out.integrations.slack) {
+    out.integrations.slack = {
+      ...out.integrations.slack,
+      appToken: encryptToken(out.integrations.slack.appToken),
+      botToken: encryptToken(out.integrations.slack.botToken),
+    }
+  }
+  if (out.integrations.gmail) {
+    out.integrations.gmail = {
+      ...out.integrations.gmail,
+      accessToken:  encryptToken(out.integrations.gmail.accessToken),
+      refreshToken: encryptToken(out.integrations.gmail.refreshToken),
+      clientId:     encryptToken(out.integrations.gmail.clientId),
+      clientSecret: encryptToken(out.integrations.gmail.clientSecret),
+      email:        out.integrations.gmail.email ?? null,
+    }
+  }
+  return out
+}
+
+// Returns the plaintext settings object. Safe to mutate a shallow copy.
 function loadSettings() {
   if (_cachedSettings) return _cachedSettings
   try {
     fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true })
     if (fs.existsSync(SETTINGS_PATH)) {
-      _cachedSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'))
+      const onDisk = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'))
+      _cachedSettings = decryptAllTokens(onDisk)
       return _cachedSettings
     }
   } catch (e) {
@@ -58,56 +112,19 @@ function loadSettings() {
   return _cachedSettings
 }
 
-// Returns settings with tokens decrypted for consumption by the renderer
+// Kept for API clarity — the renderer always gets decrypted tokens, same
+// as what `loadSettings()` now returns internally.
 function loadSettingsDecrypted() {
-  const s = loadSettings()
-  const decrypted = { ...s, integrations: { ...s.integrations } }
-
-  if (decrypted.integrations?.slack) {
-    decrypted.integrations.slack = {
-      appToken: decryptToken(s.integrations.slack.appToken),
-      botToken: decryptToken(s.integrations.slack.botToken),
-    }
-  }
-
-  if (decrypted.integrations?.gmail) {
-    decrypted.integrations.gmail = {
-      accessToken:  decryptToken(s.integrations.gmail.accessToken),
-      refreshToken: decryptToken(s.integrations.gmail.refreshToken),
-      clientId:     decryptToken(s.integrations.gmail.clientId),
-      clientSecret: decryptToken(s.integrations.gmail.clientSecret),
-      email:        s.integrations.gmail.email ?? null,
-    }
-  }
-
-  return decrypted
+  return loadSettings()
 }
 
 function saveSettings(settings) {
   try {
-    // Encrypt tokens before writing to disk
-    const toWrite = { ...settings, integrations: { ...settings.integrations } }
-
-    if (toWrite.integrations?.slack) {
-      toWrite.integrations.slack = {
-        appToken: encryptToken(toWrite.integrations.slack.appToken),
-        botToken: encryptToken(toWrite.integrations.slack.botToken),
-      }
-    }
-
-    if (toWrite.integrations?.gmail) {
-      toWrite.integrations.gmail = {
-        accessToken:  encryptToken(toWrite.integrations.gmail.accessToken),
-        refreshToken: encryptToken(toWrite.integrations.gmail.refreshToken),
-        clientId:     encryptToken(toWrite.integrations.gmail.clientId),
-        clientSecret: encryptToken(toWrite.integrations.gmail.clientSecret),
-        email:        toWrite.integrations.gmail.email ?? null,
-      }
-    }
-
+    // Cache holds plaintext; disk holds encrypted tokens.
+    _cachedSettings = settings
+    const toWrite = encryptAllTokens(settings)
     fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true })
     fs.writeFileSync(SETTINGS_PATH, JSON.stringify(toWrite, null, 2))
-    _cachedSettings = toWrite
   } catch (e) {
     console.warn('[Settings] Failed to save:', e.message)
   }
@@ -259,16 +276,48 @@ function createTray() {
 }
 
 // ── IPC handlers ────────────────────────────────────────────────
+
+// Click-through refcount. The renderer has multiple interactive regions
+// (mascot, bubble, context menu) and their hover boxes overlap and fire
+// enter/leave in unpredictable order. Rather than a single boolean flag
+// — which would thrash `setIgnoreMouseEvents` mid-drag when a 1-pixel gap
+// between two regions causes leave-then-enter — we keep a refcount and
+// only flip the window's mouse events when the count crosses 0.
+//
+// The renderer sends +1 on region enter and -1 on region leave. Extra
+// safety: we clamp the count to [0, 10] to guard against bugs where
+// a leave is missed (e.g. React unmount during hover).
+let _mouseOverCount = 0
+function applyMouseOver() {
+  if (!win) return
+  const over = _mouseOverCount > 0
+  if (over) {
+    win.setIgnoreMouseEvents(false)
+    win.setFocusable(true)
+  } else {
+    win.setIgnoreMouseEvents(true, { forward: true })
+    win.setFocusable(false)
+  }
+}
+
 function registerIPC() {
-  ipcMain.on('buddy:mouse-over-mascot', (_event, isOver) => {
-    if (!win) return
-    if (isOver) {
-      win.setIgnoreMouseEvents(false)
-      win.setFocusable(true)
-    } else {
-      win.setIgnoreMouseEvents(true, { forward: true })
-      win.setFocusable(false)
+  ipcMain.on('buddy:mouse-over-mascot', (_event, payload) => {
+    // Back-compat: old renderers may still send boolean isOver.
+    // New renderers send { delta: +1 | -1 } or { reset: true }.
+    if (typeof payload === 'boolean') {
+      // Legacy boolean path — treat as an absolute "over vs not" signal.
+      // We don't know the other regions' state, so force the count to
+      // match. This shouldn't be hit after the renderer upgrade but keeps
+      // the wire compatible during hot-reload.
+      _mouseOverCount = payload ? 1 : 0
+    } else if (payload && typeof payload === 'object') {
+      if (payload.reset) {
+        _mouseOverCount = 0
+      } else if (Number.isFinite(payload.delta)) {
+        _mouseOverCount = Math.max(0, Math.min(10, _mouseOverCount + payload.delta))
+      }
     }
+    applyMouseOver()
   })
 
   // Send reply — return { ok: true } or { ok: false, error } so renderer can show feedback
@@ -337,8 +386,18 @@ function registerIPC() {
   })
 
   ipcMain.handle('buddy:open-external', (_event, url) => {
-    if (url.startsWith('https://') || url.startsWith('http://')) {
-      shell.openExternal(url)
+    // Strict validation via URL parser — rejects userinfo, non-http(s) schemes,
+    // javascript:, file:, and malformed input. `url.startsWith('https://')`
+    // previously let `https://evil@attacker.com/...` through.
+    if (typeof url !== 'string' || url.length > 2048) return { ok: false }
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return { ok: false }
+      if (parsed.username || parsed.password) return { ok: false }
+      shell.openExternal(parsed.toString())
+      return { ok: true }
+    } catch {
+      return { ok: false }
     }
   })
 
@@ -356,9 +415,14 @@ function registerIPC() {
         'http://localhost:42813/oauth/google/callback'
       )
 
+      // CSRF protection: random state bound to this auth flow. The local
+      // server below rejects any callback whose `state` doesn't match.
+      const state = crypto.randomBytes(24).toString('base64url')
+
       const authUrl = oauth2Client.generateAuthUrl({
         access_type: 'offline',
         prompt: 'consent', // force refresh_token to always be returned
+        state,
         scope: [
           'https://www.googleapis.com/auth/gmail.readonly',
           'https://www.googleapis.com/auth/gmail.modify',
@@ -366,7 +430,7 @@ function registerIPC() {
       })
 
       // Start the local server BEFORE opening the browser so we're ready
-      const codePromise = startOAuthServer()
+      const codePromise = startOAuthServer({ expectedState: state })
       shell.openExternal(authUrl)
 
       const code = await codePromise
@@ -401,8 +465,7 @@ function registerIPC() {
           email,
         },
       }
-      saveSettings(s)
-      _cachedSettings = null // bust cache so next load picks up the new values
+      saveSettings(s) // saveSettings now updates the plaintext cache itself
 
       // Start the Gmail adapter
       await startGmailAdapter({ accessToken: access_token, refreshToken: refresh_token, clientId, clientSecret })
@@ -424,7 +487,6 @@ function registerIPC() {
       if (s.integrations?.gmail) {
         delete s.integrations.gmail
         saveSettings(s)
-        _cachedSettings = null
       }
       return { ok: true }
     } catch (e) {
